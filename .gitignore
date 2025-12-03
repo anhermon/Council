@@ -19,6 +19,11 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
+*.pyc
+.coverage
+htmlcov/
+instance/
+.tox/
 
 # Virtual environments
 venv/
@@ -47,15 +52,17 @@ Thumbs.db
 # Temporary files
 *.tmp
 *.temp
-*.xml
 *.bak
 *.md.bak
+
+# Repomix temporary XML files (project-specific)
+repomix_*.xml
 
 # Knowledge base (optional - uncomment if you want to exclude)
 # knowledge/*.md
 
-# Council cache
-.council/cache
+# Council cache and history
+.council/
 
 
 # Added by housekeeping
