@@ -1,42 +1,32 @@
 # The Council - AI Code Review MCP Server
 
-An autonomous code quality gate that acts as a local MCP Server, providing AI-powered code reviews through FastMCP, Pydantic-AI, Repomix, and Jina Reader.
+![The Council](Council.png)
 
-## Features
+## What is The Council?
 
-- **Deep Context Analysis**: Uses Repomix to extract comprehensive code context (XML format)
-- **Dynamic Knowledge Base**: Learn from documentation via Jina Reader and automatically apply standards
-- **Structured Output**: Pydantic-AI ensures type-safe, structured review results
-- **MCP Integration**: Exposes tools via FastMCP for use in Cursor, VS Code, and other MCP-compatible editors
+**The Council** is an autonomous AI-powered code review system that acts as a local MCP (Model Context Protocol) server. It provides intelligent, context-aware code reviews by analyzing your entire codebase, learning from documentation, and applying coding standards automatically.
 
-## Architecture
+### What it does:
 
-- **Server Layer**: FastMCP for MCP protocol implementation
-- **Logic Layer**: Pydantic-AI for structured, type-safe AI outputs
-- **Context Layer**: Repomix wrapper for deep code context extraction
-- **Knowledge Layer**: Jina Reader integration for documentation fetching
+- **Reviews your code** with deep context analysis using Repomix to understand your entire codebase
+- **Learns coding standards** from documentation URLs and applies them to future reviews
+- **Provides structured feedback** with severity assessments, issue detection, and suggested fixes
+- **Integrates seamlessly** with Cursor, VS Code, and other MCP-compatible editors
+- **Maintains code quality** through automated housekeeping and standardization
 
-## Setup
+Think of it as your AI code reviewer that never sleeps, continuously learns, and understands your project's full context.
 
-### Prerequisites
-
-- Python 3.12+
-- [uv](https://github.com/astral-sh/uv) package manager
-- OpenAI API key (or other compatible model provider)
+## Quickstart
 
 ### Installation
 
-1. Clone or navigate to the project directory:
+1. **Install dependencies:**
 ```bash
 cd council
-```
-
-2. Install dependencies using uv:
-```bash
 uv sync
 ```
 
-3. Create a `.env` file with your API keys:
+2. **Configure your API keys** by creating a `.env` file:
 
 **Option A: Direct OpenAI/Anthropic/etc. (default)**
 ```bash
@@ -51,7 +41,37 @@ LITELLM_API_KEY=your_litellm_api_key
 COUNCIL_MODEL=your-model-name  # Model name as configured in LiteLLM
 ```
 
-When using LiteLLM, the model name should match what's configured in your LiteLLM proxy (e.g., `sonnet-4`, `gpt-4`, `custom/my-model`). The `COUNCIL_MODEL` environment variable is required and must be set.
+> **Note:** The `COUNCIL_MODEL` environment variable is required. When using LiteLLM, match your proxy configuration. For direct providers, use format `provider:model-name` (e.g., `openai:gpt-4o`).
+
+### Prerequisites
+
+- Python 3.12+
+- [uv](https://github.com/astral-sh/uv) package manager
+- OpenAI API key (or other compatible model provider)
+
+### Basic Usage
+
+1. **Teach The Council some best practices:**
+```bash
+uv run council learn "https://docs.anthropic.com/en/docs/build-with-claude/prompt-engineering/system-prompts" prompt_engineering
+```
+
+2. **Review your code:**
+```bash
+uv run council review src/council/main.py
+```
+
+3. **Run housekeeping to maintain code quality:**
+```bash
+uv run council housekeeping
+```
+
+## Features
+
+- **Deep Context Analysis**: Uses Repomix to extract comprehensive code context (XML format)
+- **Dynamic Knowledge Base**: Learn from documentation via Jina Reader and automatically apply standards
+- **Structured Output**: Pydantic-AI ensures type-safe, structured review results
+- **MCP Integration**: Exposes tools via FastMCP for use in Cursor, VS Code, and other MCP-compatible editors
 
 ## Usage
 
@@ -157,22 +177,31 @@ learn_rules(
 
 The knowledge is automatically loaded into future reviews.
 
-### First Steps
+## Architecture
 
-1. Teach The Council some best practices:
-```bash
-uv run council learn "https://docs.anthropic.com/en/docs/build-with-claude/prompt-engineering/system-prompts" prompt_engineering
-```
+- **Server Layer**: FastMCP for MCP protocol implementation
+- **Logic Layer**: Pydantic-AI for structured, type-safe AI outputs
+- **Context Layer**: Repomix wrapper for deep code context extraction
+- **Knowledge Layer**: Jina Reader integration for documentation fetching
 
-2. Review your code:
-```bash
-uv run council review path/to/your/file.py
-```
+## Configuration
 
-3. Run housekeeping to maintain code quality:
-```bash
-uv run council housekeeping
-```
+### Environment Variables
+
+Create a `.env` file and configure your API keys:
+
+- **Direct Provider**: Set `OPENAI_API_KEY` (or `ANTHROPIC_API_KEY`, etc.) and optionally `COUNCIL_MODEL`
+- **LiteLLM Proxy**: Set `LITELLM_BASE_URL` and `LITELLM_API_KEY` for custom model routing
+
+The `COUNCIL_MODEL` environment variable is required and must be set. When using LiteLLM, this should match your LiteLLM proxy configuration. When using direct providers, use the format `provider:model-name` (e.g., `openai:gpt-4o`, `anthropic:claude-3-5-sonnet-20241022`).
+
+### Repomix Configuration
+
+Repomix is configured via command-line flags. You can customize which files are included by modifying the `get_packed_context` function in `src/council/tools/repomix.py` if needed. (Note: `context.py` is a backward-compatible wrapper that re-exports from `repomix.py`.)
+
+### Knowledge Base
+
+The `knowledge/` directory stores markdown files that are automatically loaded into the system prompt. Files are loaded in alphabetical order and injected as "RULESET" sections. Use the `learn_rules` tool to populate this directory automatically.
 
 ## Project Structure
 
@@ -202,25 +231,6 @@ the-council/
             └── git_tools.py # Git integration tools
 ```
 
-## Configuration
-
-### Environment Variables
-
-Create a `.env` file and configure your API keys:
-
-- **Direct Provider**: Set `OPENAI_API_KEY` (or `ANTHROPIC_API_KEY`, etc.) and optionally `COUNCIL_MODEL`
-- **LiteLLM Proxy**: Set `LITELLM_BASE_URL` and `LITELLM_API_KEY` for custom model routing
-
-The `COUNCIL_MODEL` environment variable is required and must be set. When using LiteLLM, this should match your LiteLLM proxy configuration. When using direct providers, use the format `provider:model-name` (e.g., `openai:gpt-4o`, `anthropic:claude-3-5-sonnet-20241022`).
-
-### Repomix Configuration
-
-Repomix is configured via command-line flags. You can customize which files are included by modifying the `get_packed_context` function in `src/council/tools/context.py` if needed.
-
-### Knowledge Base
-
-The `knowledge/` directory stores markdown files that are automatically loaded into the system prompt. Files are loaded in alphabetical order and injected as "RULESET" sections. Use the `learn_rules` tool to populate this directory automatically.
-
 ## Development
 
 ### Dependencies
@@ -245,7 +255,21 @@ uv run ruff format src/
 
 ### Running Tests
 
-(Add test instructions when tests are implemented)
+Tests are located in the `tests/` directory. Run them with:
+
+```bash
+# Run all tests
+uv run pytest
+
+# Run with verbose output
+uv run pytest -v
+
+# Run specific test file
+uv run pytest tests/test_tools_path_utils.py
+
+# Run integration tests (may require external tools)
+uv run pytest tests/integration/ -m integration
+```
 
 ## License
 
