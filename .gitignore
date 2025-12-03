@@ -54,3 +54,6 @@ Thumbs.db
 # Knowledge base (optional - uncomment if you want to exclude)
 # knowledge/*.md
 
+# Council cache
+.council/cache
+
