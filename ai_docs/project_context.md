@@ -6,8 +6,8 @@ The Council is an AI-powered code review agent that acts as an MCP (Model Contex
 
 ## 2. Tech Stack & Key Libraries
 
-- Language: Python 3.12+
-- Frameworks: 
+- Language: Python >=3.12
+- Frameworks:
   - FastMCP (MCP server framework)
   - Pydantic-AI (type-safe AI agent framework)
   - Click (CLI framework)
@@ -31,12 +31,13 @@ The Council is an AI-powered code review agent that acts as an MCP (Model Contex
 
 ## 4. Operational Context
 
-- **Run Locally:** 
+- **Run Locally:**
   - MCP Server: `uv run python -m src.council.main` or `uv run council server`
   - CLI Review: `uv run council review <file_path> [options]`
   - Learn Rules: `uv run council learn <url> <topic>`
+  - Housekeeping: `uv run council housekeeping`
 - **Run Tests:** (Not yet implemented - placeholder in README)
-- **Build/Deploy:** 
+- **Build/Deploy:**
   - Install: `uv sync`
   - Package: Standard Python packaging via `pyproject.toml` (hatchling backend)
 
@@ -55,7 +56,7 @@ council/
     └── council/
         ├── __init__.py     # Package init, version
         ├── main.py         # FastMCP server entry point, MCP tool definitions
-        ├── cli.py          # Click CLI interface (review, learn, server commands)
+        ├── cli.py          # Click CLI interface (review, learn, server, housekeeping commands)
         ├── config.py       # Settings management, path resolution, env vars
         ├── templates/
         │   └── system_prompt.j2  # Jinja2 template for agent system prompt
@@ -65,6 +66,7 @@ council/
         └── tools/
             ├── __init__.py        # Tool exports
             ├── context.py         # Repomix wrapper, path validation, XML security checks
+            ├── git_tools.py       # Git integration (diff, history, uncommitted files)
             └── scribe.py          # Jina Reader wrapper, URL validation, SSRF protection
 ```
 
@@ -78,4 +80,4 @@ council/
 - **Security:** Extensive validation for path traversal, SSRF (URL validation), XXE (XML security checks), and command injection prevention in all user inputs.
 - **Code Quality:** Project uses Ruff for linting and formatting. Run `uv run ruff check --fix src/` and `uv run ruff format src/` to maintain code quality. All linting issues should be resolved before committing.
 - **Configuration Separation:** No user-specific configuration values should be hardcoded in the repository. All model names, API endpoints, and other user-specific settings must come from environment variables.
-
+- **Uncommitted Reviews:** Use `--uncommitted` flag to review only files with uncommitted changes. This is useful for pre-commit reviews.

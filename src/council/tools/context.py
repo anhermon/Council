@@ -6,7 +6,6 @@ import re
 import tempfile
 import time
 from pathlib import Path
-from typing import Any
 
 import logfire
 
@@ -287,9 +286,7 @@ async def get_packed_context(file_path: str) -> str:
             if len(_repomix_cache) > 100:
                 # Remove entries older than TTL
                 cutoff_time = current_time - REPOMIX_CACHE_TTL
-                expired_keys = [
-                    k for k, v in _repomix_cache.items() if v[1] <= cutoff_time
-                ]
+                expired_keys = [k for k, v in _repomix_cache.items() if v[1] <= cutoff_time]
                 for key in expired_keys:
                     del _repomix_cache[key]
             logfire.info("Context extracted successfully", size=len(content))

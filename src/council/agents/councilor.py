@@ -14,7 +14,13 @@ from pydantic_ai.providers.litellm import LiteLLMProvider
 
 from ..config import settings
 from ..tools.architecture import analyze_architecture
-from ..tools.code_analysis import analyze_imports, read_file, search_codebase
+from ..tools.code_analysis import (
+    analyze_imports,
+    read_file,
+    search_codebase,
+    write_file,
+    write_file_chunk,
+)
 from ..tools.git_tools import get_file_history, get_git_diff
 from ..tools.metrics import calculate_complexity
 from ..tools.security import scan_security_vulnerabilities
@@ -171,7 +177,9 @@ class CouncilDeps:
             valid_phases = {"security", "performance", "maintainability", "best_practices"}
             invalid_phases = set(self.review_phases) - valid_phases
             if invalid_phases:
-                raise ValueError(f"Invalid review phases: {invalid_phases}. Valid phases: {valid_phases}")
+                raise ValueError(
+                    f"Invalid review phases: {invalid_phases}. Valid phases: {valid_phases}"
+                )
 
 
 def _create_model() -> OpenAIChatModel | str:
@@ -233,6 +241,8 @@ def get_councilor_agent() -> Agent[CouncilDeps, ReviewResult]:
                         output_type=ReviewResult,
                         tools=[
                             read_file,
+                            write_file,
+                            write_file_chunk,
                             search_codebase,
                             analyze_imports,
                             get_git_diff,

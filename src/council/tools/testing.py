@@ -351,8 +351,8 @@ async def check_test_quality(test_file: str) -> dict[str, Any]:
 
         # Check for setup/teardown methods
         if ("def setUp" not in content and "def setup" not in content) and test_count > 3:
-                issues.append("Consider using setUp methods for test fixtures")
-                quality_score -= 5
+            issues.append("Consider using setUp methods for test fixtures")
+            quality_score -= 5
 
         # Check assertion ratio
         if test_count > 0:

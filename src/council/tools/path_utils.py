@@ -3,7 +3,6 @@
 import logging
 import os
 from pathlib import Path
-from typing import Set
 
 from ..config import settings
 
@@ -13,7 +12,7 @@ MAX_PATH_LENGTH = 4096
 MAX_SEARCH_DEPTH = 10  # Limit recursive search depth
 
 
-def _is_safe_path(path: Path, allowed_roots: Set[Path]) -> bool:
+def _is_safe_path(path: Path, allowed_roots: set[Path]) -> bool:
     """
     Safely check if a path is within allowed directories.
 

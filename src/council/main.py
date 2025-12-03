@@ -141,7 +141,9 @@ async def review_code(file_path: str, base_ref: str | None = None) -> ReviewCode
             return ReviewCodeResponse(success=False, error=error_msg)
         except Exception as e:
             error_msg = f"Agent execution failed: {str(e)}"
-            logfire.error("Agent execution failed", error=error_msg, request_id=request_id, exc_info=True)
+            logfire.error(
+                "Agent execution failed", error=error_msg, request_id=request_id, exc_info=True
+            )
             return ReviewCodeResponse(success=False, error=error_msg)
 
         # Validate result structure

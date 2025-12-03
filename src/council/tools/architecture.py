@@ -21,6 +21,7 @@ async def analyze_architecture(file_path: str, base_path: str | None = None) -> 
 
     Args:
         file_path: Path to the file or directory to analyze
+        base_path: Optional base path to resolve relative paths from
 
     Returns:
         Dictionary with architectural analysis:
@@ -117,18 +118,28 @@ async def analyze_architecture(file_path: str, base_path: str | None = None) -> 
 
                 # Long parameter list
                 for node in ast.walk(tree):
-                    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and len(node.args.args) > 7:
-                            anti_patterns.append(
-                                f"Long Parameter List: {node.name} has {len(node.args.args)} parameters"
-                            )
-                            recommendations.append(
-                                f"Consider using a configuration object for {node.name} parameters"
-                            )
+                    if (
+                        isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+                        and len(node.args.args) > 7
+                    ):
+                        anti_patterns.append(
+                            f"Long Parameter List: {node.name} has {len(node.args.args)} parameters"
+                        )
+                        recommendations.append(
+                            f"Consider using a configuration object for {node.name} parameters"
+                        )
 
                 # Deep nesting
                 max_depth = 0
 
                 def check_depth(node: ast.AST, depth: int = 0) -> None:
+                    """
+                    Recursively check the maximum nesting depth of control structures.
+
+                    Args:
+                        node: AST node to analyze
+                        depth: Current depth level
+                    """
                     nonlocal max_depth
                     max_depth = max(max_depth, depth)
                     for child in ast.iter_child_nodes(node):

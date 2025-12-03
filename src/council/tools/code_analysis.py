@@ -287,3 +287,158 @@ async def analyze_imports(file_path: str, base_path: str | None = None) -> dict[
     except Exception as e:
         logfire.error("Import analysis failed", file_path=file_path, error=str(e))
         raise
+
+
+async def write_file(file_path: str, content: str, base_path: str | None = None) -> str:
+    """
+    Write content to a file, creating it if it doesn't exist.
+
+    This tool allows the agent to modify files, add docstrings, remove dead code,
+    and make other intelligent edits during housekeeping operations.
+
+    For large files (>100KB), consider using write_file_chunk instead to avoid
+    tool call serialization issues.
+
+    Args:
+        file_path: Path to the file to write. Can be:
+            - Full path: "src/council/config.py"
+            - Relative path: "config.py" (will resolve from project root)
+        content: Content to write to the file
+        base_path: Optional base path (usually not needed, tool resolves automatically)
+
+    Returns:
+        Success message with file path
+
+    Raises:
+        ValueError: If path is invalid or outside project root
+        PermissionError: If file cannot be written
+    """
+    logfire.info("Writing file", file_path=file_path, base_path=base_path)
+
+    try:
+        resolved_path = resolve_file_path(file_path, base_path)
+
+        # Ensure file is within project root for safety
+        project_root = settings.project_root.resolve()
+        try:
+            if not resolved_path.is_relative_to(project_root):
+                raise ValueError(f"File path must be within project root: {file_path}")
+        except AttributeError:
+            # Python < 3.9 fallback
+            if not str(resolved_path).startswith(str(project_root)):
+                raise ValueError(f"File path must be within project root: {file_path}")
+
+        # Check content size
+        if len(content) > MAX_FILE_SIZE:
+            raise ValueError(f"Content too large: {len(content)} bytes (max: {MAX_FILE_SIZE})")
+
+        # Create parent directories if needed
+        resolved_path.parent.mkdir(parents=True, exist_ok=True)
+
+        # Write file
+        resolved_path.write_text(content, encoding="utf-8")
+
+        logfire.info("File written successfully", file_path=file_path, size=len(content))
+        return f"Successfully wrote {resolved_path.relative_to(project_root)}"
+
+    except Exception as e:
+        logfire.error("Failed to write file", file_path=file_path, error=str(e))
+        raise
+
+
+async def write_file_chunk(
+    file_path: str,
+    content: str,
+    chunk_index: int,
+    total_chunks: int,
+    base_path: str | None = None,
+) -> str:
+    """
+    Write a chunk of content to a file, supporting chunked writes for large files.
+
+    This tool allows writing large files in chunks to avoid tool call serialization
+    issues with providers like Bedrock. Use this for files larger than ~100KB.
+
+    The tool will:
+    - Create the file if it doesn't exist (chunk_index 0)
+    - Append chunks in order (chunk_index 1, 2, 3, ...)
+    - Replace the entire file if chunk_index is 0 and total_chunks is 1
+
+    Args:
+        file_path: Path to the file to write. Can be:
+            - Full path: "src/council/config.py"
+            - Relative path: "config.py" (will resolve from project root)
+        content: Content chunk to write
+        chunk_index: Zero-based index of this chunk (0 = first chunk)
+        total_chunks: Total number of chunks that will be written
+        base_path: Optional base path (usually not needed, tool resolves automatically)
+
+    Returns:
+        Success message with file path and chunk info
+
+    Raises:
+        ValueError: If path is invalid, outside project root, or chunk_index is invalid
+        PermissionError: If file cannot be written
+    """
+    logfire.info(
+        "Writing file chunk",
+        file_path=file_path,
+        chunk_index=chunk_index,
+        total_chunks=total_chunks,
+        chunk_size=len(content),
+        base_path=base_path,
+    )
+
+    try:
+        resolved_path = resolve_file_path(file_path, base_path)
+
+        # Ensure file is within project root for safety
+        project_root = settings.project_root.resolve()
+        try:
+            if not resolved_path.is_relative_to(project_root):
+                raise ValueError(f"File path must be within project root: {file_path}")
+        except AttributeError:
+            # Python < 3.9 fallback
+            if not str(resolved_path).startswith(str(project_root)):
+                raise ValueError(f"File path must be within project root: {file_path}")
+
+        # Validate chunk parameters
+        if chunk_index < 0:
+            raise ValueError(f"chunk_index must be >= 0, got {chunk_index}")
+        if total_chunks < 1:
+            raise ValueError(f"total_chunks must be >= 1, got {total_chunks}")
+        if chunk_index >= total_chunks:
+            raise ValueError(f"chunk_index ({chunk_index}) must be < total_chunks ({total_chunks})")
+
+        # Check chunk size
+        if len(content) > MAX_FILE_SIZE:
+            raise ValueError(f"Chunk too large: {len(content)} bytes (max: {MAX_FILE_SIZE})")
+
+        # Create parent directories if needed
+        resolved_path.parent.mkdir(parents=True, exist_ok=True)
+
+        # Write chunk
+        if chunk_index == 0:
+            # First chunk: create/overwrite file
+            resolved_path.write_text(content, encoding="utf-8")
+        else:
+            # Subsequent chunks: append to file
+            with resolved_path.open("a", encoding="utf-8") as f:
+                f.write(content)
+
+        logfire.info(
+            "File chunk written successfully",
+            file_path=file_path,
+            chunk_index=chunk_index,
+            total_chunks=total_chunks,
+        )
+
+        if chunk_index == total_chunks - 1:
+            # Last chunk
+            return f"Successfully wrote chunk {chunk_index + 1}/{total_chunks} (final) to {resolved_path.relative_to(project_root)}"
+        else:
+            return f"Successfully wrote chunk {chunk_index + 1}/{total_chunks} to {resolved_path.relative_to(project_root)}"
+
+    except Exception as e:
+        logfire.error("Failed to write file chunk", file_path=file_path, error=str(e))
+        raise

@@ -69,7 +69,7 @@ uv run council server
 
 ### CLI Commands
 
-The Council provides a CLI interface for direct code reviews:
+The Council provides a comprehensive CLI interface for code reviews and maintenance:
 
 #### Review Code
 ```bash
@@ -86,6 +86,15 @@ uv run council review src/council/main.py --output json
 
 # Review with extra instructions
 uv run council review src/council/main.py --extra-instructions "Focus on security issues"
+
+# Review multiple files or directories
+uv run council review src/ tests/ config.py
+
+# Review only uncommitted changes
+uv run council review --uncommitted
+
+# Review changes compared to a git reference
+uv run council review --diff main src/
 ```
 
 #### Learn Rules
@@ -102,6 +111,18 @@ uv run council learn "https://docs.anthropic.com/en/docs/build-with-claude/promp
 ```bash
 uv run council server
 ```
+
+#### Housekeeping
+Execute comprehensive codebase maintenance and cleanup:
+```bash
+uv run council housekeeping
+```
+
+This command runs a structured 4-phase protocol:
+- **Phase 1**: Hygiene & Safety (gitignore audit, cleanup, dead code removal)
+- **Phase 2**: Standardization & Quality (linting, formatting, DRY analysis)  
+- **Phase 3**: Documentation Alignment (docstring audit, README updates)
+- **Phase 4**: Mental Map (project context documentation)
 
 ### MCP Tools
 
@@ -139,13 +160,18 @@ The knowledge is automatically loaded into future reviews.
 ### First Steps
 
 1. Teach The Council some best practices:
-```python
-learn_rules("https://docs.anthropic.com/en/docs/build-with-claude/prompt-engineering/system-prompts", "prompt_engineering")
+```bash
+uv run council learn "https://docs.anthropic.com/en/docs/build-with-claude/prompt-engineering/system-prompts" prompt_engineering
 ```
 
 2. Review your code:
-```python
-review_code("path/to/your/file.py")
+```bash
+uv run council review path/to/your/file.py
+```
+
+3. Run housekeeping to maintain code quality:
+```bash
+uv run council housekeeping
 ```
 
 ## Project Structure
@@ -156,12 +182,14 @@ the-council/
 ├── .env                    # API keys (create this)
 ├── knowledge/              # Dynamic knowledge base (.md files)
 │   └── .keep
+├── ai_docs/                # AI agent context documentation
+│   └── project_context.md  # Project mental map
 └── src/
     └── council/
         ├── __init__.py
         ├── main.py         # FastMCP server entry point
         ├── cli.py          # CLI interface
-        ├── config.py        # Settings & path constants
+        ├── config.py       # Settings & path constants
         ├── templates/
         │   └── system_prompt.j2  # Jinja2 template for system prompt
         ├── agents/
@@ -170,7 +198,8 @@ the-council/
         └── tools/
             ├── __init__.py
             ├── scribe.py    # Jina Reader wrapper
-            └── context.py   # Repomix wrapper
+            ├── context.py   # Repomix wrapper
+            └── git_tools.py # Git integration tools
 ```
 
 ## Configuration
@@ -202,6 +231,18 @@ The `knowledge/` directory stores markdown files that are automatically loaded i
 - `logfire`: Structured logging
 - `devtools`: Development utilities
 
+### Code Quality
+
+The project uses Ruff for linting and formatting:
+
+```bash
+# Check and fix issues
+uv run ruff check --fix src/
+
+# Format code
+uv run ruff format src/
+```
+
 ### Running Tests
 
 (Add test instructions when tests are implemented)
@@ -209,4 +250,3 @@ The `knowledge/` directory stores markdown files that are automatically loaded i
 ## License
 
 (Add license information)
-
