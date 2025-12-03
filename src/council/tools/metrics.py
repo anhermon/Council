@@ -7,9 +7,6 @@ import logfire
 
 from .path_utils import resolve_file_path
 
-# Maximum file size to read (10MB)
-MAX_FILE_SIZE = 10 * 1024 * 1024
-
 
 class ComplexityVisitor(ast.NodeVisitor):
     """AST visitor to calculate cyclomatic complexity."""

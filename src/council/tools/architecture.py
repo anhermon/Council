@@ -8,9 +8,6 @@ import logfire
 
 from .path_utils import resolve_file_path
 
-# Maximum file size to read (10MB)
-MAX_FILE_SIZE = 10 * 1024 * 1024
-
 
 async def analyze_architecture(file_path: str, base_path: str | None = None) -> dict[str, Any]:
     """

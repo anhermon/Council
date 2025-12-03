@@ -7,6 +7,7 @@ from pathlib import Path
 import logfire
 
 from ..config import settings
+from .exceptions import SubprocessError, SubprocessTimeoutError
 
 logger = logging.getLogger(__name__)
 
@@ -31,14 +32,14 @@ async def run_command_safely(
         timeout: Command timeout in seconds. Defaults to settings.subprocess_timeout.
         max_output_size: Maximum output size in bytes. If exceeded, output is truncated.
             Defaults to 10MB.
-        check: If True, raise RuntimeError on non-zero return code. Defaults to True.
+        check: If True, raise SubprocessError on non-zero return code. Defaults to True.
 
     Returns:
         Tuple of (stdout_text, stderr_text, return_code)
 
     Raises:
-        TimeoutError: If command times out
-        RuntimeError: If check=True and command returns non-zero exit code
+        SubprocessTimeoutError: If command times out
+        SubprocessError: If check=True and command returns non-zero exit code
         ValueError: If output exceeds max_output_size
     """
     if cwd is None:
@@ -66,8 +67,10 @@ async def run_command_safely(
             if proc:
                 proc.kill()
                 await proc.wait()
-            raise TimeoutError(
-                f"Command timed out after {timeout} seconds: {' '.join(cmd)}"
+            raise SubprocessTimeoutError(
+                f"Command timed out after {timeout} seconds: {' '.join(cmd)}",
+                command=cmd,
+                original_error=err,
             ) from err
 
         stdout_text = stdout.decode("utf-8", errors="replace")
@@ -85,19 +88,25 @@ async def run_command_safely(
 
         if check and proc.returncode != 0:
             error_msg = stderr_text or f"Command failed with return code {proc.returncode}"
-            raise RuntimeError(f"Command failed: {' '.join(cmd)} - {error_msg}")
+            raise SubprocessError(
+                f"Command failed: {' '.join(cmd)} - {error_msg}",
+                command=cmd,
+                return_code=proc.returncode,
+                stderr=stderr_text,
+            )
 
         return stdout_text, stderr_text, proc.returncode
 
-    except TimeoutError:
-        # Re-raise timeout errors as-is
-        raise
-    except RuntimeError:
-        # Re-raise runtime errors (from check=True) as-is
+    except (SubprocessError, SubprocessTimeoutError):
+        # Re-raise subprocess errors as-is
         raise
     except Exception as e:
         logfire.error("Command execution failed", cmd=cmd, error=str(e))
-        raise RuntimeError(f"Command execution failed: {' '.join(cmd)} - {str(e)}") from e
+        raise SubprocessError(
+            f"Command execution failed: {' '.join(cmd)} - {str(e)}",
+            command=cmd,
+            original_error=e,
+        ) from e
     finally:
         # Ensure process is cleaned up even if there was an error
         if proc and proc.returncode is None:

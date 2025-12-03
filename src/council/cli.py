@@ -5,7 +5,10 @@ import contextlib
 import json
 import shutil
 import sys
+import time
+import uuid
 from collections.abc import AsyncIterable, Callable
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -24,6 +27,8 @@ from .config import settings
 from .tools.cache import cache_review, get_cached_review
 from .tools.context import get_packed_context, get_packed_diff
 from .tools.git_tools import get_uncommitted_files
+from .tools.metrics_collector import get_metrics_collector
+from .tools.persistence import ReviewRecord, get_review_history
 from .tools.scribe import fetch_and_summarize, validate_topic, validate_url
 
 # Initialize logfire
@@ -201,7 +206,9 @@ async def _cleanup_spinner_task(task: asyncio.Task | None, spinner: Spinner) -> 
             await asyncio.wait_for(task, timeout=Spinner.SPINNER_CLEANUP_TIMEOUT)
 
 
-async def run_agent_review(packed_xml: str, deps: CouncilDeps, spinner: Spinner) -> ReviewResult:
+async def run_agent_review(
+    packed_xml: str, deps: CouncilDeps, spinner: Spinner, review_id: str | None = None
+) -> ReviewResult:
     """
     Run the councilor agent and get review results.
 
@@ -209,12 +216,14 @@ async def run_agent_review(packed_xml: str, deps: CouncilDeps, spinner: Spinner)
         packed_xml: Packed XML context from Repomix
         deps: Council dependencies
         spinner: Spinner instance for status updates
+        review_id: Optional review ID for metrics tracking
 
     Returns:
         ReviewResult from the agent
     """
     agent = get_councilor_agent()
     event_handler = create_event_stream_handler(spinner)
+    metrics_collector = get_metrics_collector()
 
     # Retry logic for rate limit errors
     max_retries = 3
@@ -222,6 +231,7 @@ async def run_agent_review(packed_xml: str, deps: CouncilDeps, spinner: Spinner)
 
     for attempt in range(max_retries):
         spinner_task = None
+        agent_start = time.time()
         try:
             # Start spinner task (only if enabled)
             if spinner.enabled:
@@ -248,6 +258,11 @@ async def run_agent_review(packed_xml: str, deps: CouncilDeps, spinner: Spinner)
 
                 # Extract the structured result from the streamed run
                 review_result: ReviewResult = await agent_run.get_output()
+                agent_duration = time.time() - agent_start
+                if review_id:
+                    metrics_collector.record_tool_execution(
+                        "councilor_agent", agent_duration, success=True
+                    )
                 return review_result
         except asyncio.CancelledError:
             # Don't catch cancellation - let it propagate
@@ -530,7 +545,7 @@ def _collect_files(paths: list[Path]) -> list[Path]:
 
 
 @main.command()
-@click.argument("paths", nargs=-1, required=True, type=click.Path(path_type=Path))
+@click.argument("paths", nargs=-1, required=False, type=click.Path(path_type=Path))
 @click.option(
     "--output",
     "-o",
@@ -566,10 +581,10 @@ def _collect_files(paths: list[Path]) -> list[Path]:
     "-u",
     is_flag=True,
     default=False,
-    help="Review only uncommitted changes. If specified, only files with uncommitted changes will be reviewed.",
+    help="Review only uncommitted changes. If specified without paths, reviews all uncommitted files.",
 )
 def review(
-    paths: tuple[Path, ...],
+    paths: tuple[Path, ...] | None,
     output: str,
     extra_instructions: str | None,
     base_ref: str | None,
@@ -586,6 +601,7 @@ def review(
         council review file1.py file2.py
         council review @agents
         council review src/ tests/ file.py
+        council review --uncommitted  # Review all uncommitted files
     """
     # Validate and sanitize extra_instructions
     if extra_instructions:
@@ -609,6 +625,16 @@ def review(
             )
         extra_instructions = sanitized
 
+    # Handle --uncommitted without paths: use project root
+    if uncommitted and (not paths or len(paths) == 0):
+        paths = (settings.project_root,)
+
+    # Validate that paths are provided (unless --uncommitted was used, which we handled above)
+    if not paths or len(paths) == 0:
+        click.echo("❌ No paths specified. Provide file(s) or directory/ies to review.", err=True)
+        click.echo("   Use --uncommitted to review all uncommitted files.", err=True)
+        sys.exit(1)
+
     # Collect all files to review
     files_to_review = _collect_files(list(paths))
 
@@ -628,8 +654,17 @@ def review(
                     (project_root / path).resolve() for path in uncommitted_file_paths
                 }
 
-                # Filter files_to_review to only include uncommitted files
-                filtered_files = [f for f in files_to_review if f.resolve() in uncommitted_paths]
+                # If no specific paths were provided, use all uncommitted files
+                if not paths or len(paths) == 0 or paths == (settings.project_root,):
+                    # Use all uncommitted files directly
+                    filtered_files = [
+                        (project_root / path).resolve() for path in uncommitted_file_paths
+                    ]
+                else:
+                    # Filter files_to_review to only include uncommitted files
+                    filtered_files = [
+                        f for f in files_to_review if f.resolve() in uncommitted_paths
+                    ]
 
                 if not filtered_files:
                     click.echo(
@@ -677,6 +712,12 @@ def review(
             Tuple of (file_path, ReviewResult) or None if review failed
         """
         async with semaphore:
+            # Initialize metrics and persistence
+            review_id = str(uuid.uuid4())[:8]
+            metrics_collector = get_metrics_collector()
+            review_history = get_review_history()
+            review_metrics = metrics_collector.start_review(review_id, str(file_path))
+
             try:
                 click.echo(f"\n[{idx}/{total}] 🔍 Reviewing: {file_path}", err=True)
                 if base_ref:
@@ -685,10 +726,22 @@ def review(
                     click.echo("📦 Extracting context with Repomix...", err=True)
 
                 # Get packed context using Repomix (with diff if base_ref provided)
-                if base_ref:
-                    packed_xml = await get_packed_diff(str(file_path), base_ref)
-                else:
-                    packed_xml = await get_packed_context(str(file_path))
+                context_start = time.time()
+                try:
+                    if base_ref:
+                        packed_xml = await get_packed_diff(str(file_path), base_ref)
+                    else:
+                        packed_xml = await get_packed_context(str(file_path))
+                    context_duration = time.time() - context_start
+                    metrics_collector.record_tool_execution(
+                        "repomix", context_duration, success=True
+                    )
+                except Exception as e:
+                    context_duration = time.time() - context_start
+                    metrics_collector.record_tool_execution(
+                        "repomix", context_duration, success=False, error_type=type(e).__name__
+                    )
+                    raise
 
                 # Parse review phases if provided
                 review_phases = None
@@ -728,12 +781,12 @@ def review(
                     # Run the agent review
                     click.echo("🤖 Running AI review...", err=True)
                     spinner = Spinner()
-                    review_result = await run_agent_review(packed_xml, deps, spinner)
+                    review_result = await run_agent_review(
+                        packed_xml, deps, spinner, review_id=review_id
+                    )
 
                     # Cache result if enabled
                     if not no_cache and settings.enable_cache:
-                        import os
-
                         model_name = os.getenv("COUNCIL_MODEL") or "unknown"
                         await cache_review(
                             str(file_path),
@@ -741,13 +794,53 @@ def review(
                             model_name,
                         )
 
+                # Finish metrics collection
+                metrics_collector.finish_review(
+                    review_id,
+                    success=True,
+                    issues_found=len(review_result.issues),
+                    severity=review_result.severity,
+                    context_size_bytes=len(packed_xml),
+                )
+
+                # Save review to history
+                try:
+                    review_record = ReviewRecord(
+                        review_id=review_id,
+                        file_path=str(file_path),
+                        timestamp=datetime.now().isoformat(),
+                        duration_seconds=review_metrics.duration_seconds or 0.0,
+                        success=True,
+                        error_type=None,
+                        issues_found=len(review_result.issues),
+                        severity=review_result.severity,
+                        context_size_bytes=len(packed_xml),
+                        token_usage={},  # Token usage not available in streaming mode
+                        summary=review_result.summary,
+                        metadata={
+                            "base_ref": base_ref,
+                            "extra_instructions": extra_instructions is not None,
+                            "review_phases": deps.review_phases,
+                        }
+                        if base_ref or extra_instructions or deps.review_phases
+                        else None,
+                    )
+                    review_history.save_review(review_record)
+                except Exception as e:
+                    # Don't fail the review if persistence fails
+                    logfire.warning("Failed to save review history", error=str(e))
+
                 return (file_path, review_result)
 
             except FileNotFoundError as e:
                 click.echo(f"❌ File not found: {e}", err=True)
+                metrics_collector.finish_review(
+                    review_id, success=False, error_type="FileNotFoundError"
+                )
                 return None
             except RuntimeError as e:
                 error_msg = str(e)
+                error_type = "RuntimeError"
                 if "No API keys configured" in error_msg or "API key" in error_msg.lower():
                     click.echo(f"❌ Configuration error: {e}", err=True)
                     click.echo(
@@ -756,12 +849,18 @@ def review(
                         "  - LITELLM_BASE_URL and LITELLM_API_KEY for LiteLLM proxy",
                         err=True,
                     )
+                    metrics_collector.finish_review(
+                        review_id, success=False, error_type="ConfigurationError"
+                    )
                     sys.exit(1)
                 else:
                     click.echo(f"❌ Review failed for {file_path}: {e}", err=True)
+                    metrics_collector.finish_review(review_id, success=False, error_type=error_type)
                     return None
             except Exception as e:
                 error_str = str(e).lower()
+                error_type = type(e).__name__
+                metrics_collector.finish_review(review_id, success=False, error_type=error_type)
                 # Check if this is a rate limit error
                 is_rate_limit = (
                     "429" in error_str

@@ -9,9 +9,6 @@ import logfire
 from ..config import settings
 from .path_utils import resolve_file_path
 
-# Maximum file size to read (10MB)
-MAX_FILE_SIZE = 10 * 1024 * 1024
-
 # Maximum number of files to search
 MAX_SEARCH_RESULTS = 50
 
@@ -31,7 +28,7 @@ async def read_file(file_path: str, base_path: str | None = None) -> str:
         base_path: Optional base path (usually not needed, tool resolves automatically)
 
     Returns:
-        File contents as string
+        File contents as string or error message if file cannot be read
 
     Raises:
         ValueError: If path is invalid
@@ -41,18 +38,29 @@ async def read_file(file_path: str, base_path: str | None = None) -> str:
     logfire.info("Reading file", file_path=file_path, base_path=base_path)
 
     try:
-        resolved_path = resolve_file_path(file_path, base_path)
+        try:
+            resolved_path = resolve_file_path(file_path, base_path)
+        except FileNotFoundError:
+            # Try creating a path relative to src/council if it fails
+            # This handles cases where agent uses short paths like "tools/foo.py"
+            # instead of "src/council/tools/foo.py"
+            project_root = settings.project_root.resolve()
+            src_council_path = project_root / "src" / "council" / file_path
+            if src_council_path.exists():
+                resolved_path = src_council_path
+            else:
+                raise
 
         if not resolved_path.exists():
-            raise FileNotFoundError(f"File not found: {file_path}")
+            return f"Error: File not found: {file_path}"
 
         if not resolved_path.is_file():
-            raise ValueError(f"Path is not a file: {file_path}")
+            return f"Error: Path is not a file: {file_path}"
 
         # Check file size
         file_size = resolved_path.stat().st_size
-        if file_size > MAX_FILE_SIZE:
-            raise ValueError(f"File too large: {file_size} bytes (max: {MAX_FILE_SIZE})")
+        if file_size > settings.max_file_size:
+            return f"Error: File too large: {file_size} bytes (max: {settings.max_file_size})"
 
         # Read file content
         content = resolved_path.read_text(encoding="utf-8", errors="replace")
@@ -62,7 +70,7 @@ async def read_file(file_path: str, base_path: str | None = None) -> str:
 
     except Exception as e:
         logfire.error("Failed to read file", file_path=file_path, error=str(e))
-        raise
+        return f"Error reading file {file_path}: {str(e)}"
 
 
 async def search_codebase(query: str, file_pattern: str | None = None) -> list[str]:
@@ -329,8 +337,10 @@ async def write_file(file_path: str, content: str, base_path: str | None = None)
                 raise ValueError(f"File path must be within project root: {file_path}") from None
 
         # Check content size
-        if len(content) > MAX_FILE_SIZE:
-            raise ValueError(f"Content too large: {len(content)} bytes (max: {MAX_FILE_SIZE})")
+        if len(content) > settings.max_file_size:
+            raise ValueError(
+                f"Content too large: {len(content)} bytes (max: {settings.max_file_size})"
+            )
 
         # Create parent directories if needed
         resolved_path.parent.mkdir(parents=True, exist_ok=True)
@@ -411,8 +421,10 @@ async def write_file_chunk(
             raise ValueError(f"chunk_index ({chunk_index}) must be < total_chunks ({total_chunks})")
 
         # Check chunk size
-        if len(content) > MAX_FILE_SIZE:
-            raise ValueError(f"Chunk too large: {len(content)} bytes (max: {MAX_FILE_SIZE})")
+        if len(content) > settings.max_file_size:
+            raise ValueError(
+                f"Chunk too large: {len(content)} bytes (max: {settings.max_file_size})"
+            )
 
         # Create parent directories if needed
         resolved_path.parent.mkdir(parents=True, exist_ok=True)
