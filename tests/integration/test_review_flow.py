@@ -8,10 +8,11 @@ from council.tools import PathValidationError, get_packed_context, validate_file
 
 
 @pytest.fixture
-def temp_repo(tmp_path: Path) -> Path:
+def temp_repo(mock_settings) -> Path:
     """Create a temporary git repository with sample code."""
-    repo_path = tmp_path / "test_repo"
-    repo_path.mkdir()
+    # Create repo within project root for path validation
+    repo_path = mock_settings.project_root / "test_repo"
+    repo_path.mkdir(exist_ok=True)
 
     # Initialize git repo
     import subprocess
@@ -65,7 +66,13 @@ def test_hello_world():
         capture_output=True,
     )
 
-    return repo_path
+    yield repo_path
+
+    # Cleanup: remove the test repo
+    import shutil
+
+    if repo_path.exists():
+        shutil.rmtree(repo_path, ignore_errors=True)
 
 
 @pytest.mark.asyncio
@@ -97,9 +104,10 @@ async def test_get_packed_context_nonexistent_file() -> None:
         await get_packed_context("/nonexistent/file.py")
 
 
-def test_validate_file_path_success(tmp_path: Path) -> None:
+def test_validate_file_path_success(mock_settings) -> None:
     """Test successful path validation."""
-    test_file = tmp_path / "test.py"
+    # Create file within the mock project root
+    test_file = mock_settings.project_root / "test.py"
     test_file.write_text("# test")
 
     resolved = validate_file_path(str(test_file))
@@ -108,7 +116,7 @@ def test_validate_file_path_success(tmp_path: Path) -> None:
 
 def test_validate_file_path_traversal() -> None:
     """Test path validation rejects traversal attempts."""
-    with pytest.raises(PathValidationError, match="path traversal"):
+    with pytest.raises(PathValidationError, match="Path traversal detected"):
         validate_file_path("../../../etc/passwd")
 
 

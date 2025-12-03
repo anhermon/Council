@@ -50,12 +50,13 @@ def patch_settings(mock_settings):
     """Patch the global settings object for all tests."""
     with (
         patch("council.config.settings", mock_settings),
-        patch("council.tools.context.settings", mock_settings),
+        patch("council.tools.repomix.settings", mock_settings),
         patch("council.tools.scribe.settings", mock_settings),
         patch("council.tools.path_utils.settings", mock_settings),
         patch("council.tools.static_analysis.settings", mock_settings),
         patch("council.tools.testing.settings", mock_settings),
         patch("council.tools.git_tools.settings", mock_settings),
         patch("council.tools.utils.settings", mock_settings),
+        patch("council.tools.validation.settings", mock_settings),
     ):
         yield mock_settings

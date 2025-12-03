@@ -1,6 +1,11 @@
 import pytest
 
-from council.tools.context import check_xml_security, validate_file_path, validate_include_pattern
+from council.tools.exceptions import PathValidationError
+from council.tools.validation import (
+    check_xml_security,
+    validate_file_path,
+    validate_include_pattern,
+)
 
 
 class TestValidateFilePath:
@@ -15,10 +20,10 @@ class TestValidateFilePath:
 
     def test_path_traversal(self):
         """Test path traversal detection."""
-        with pytest.raises(ValueError, match="Path traversal detected"):
+        with pytest.raises(PathValidationError, match="Path traversal detected"):
             validate_file_path("../etc/passwd")
 
-        with pytest.raises(ValueError, match="Path traversal detected"):
+        with pytest.raises(PathValidationError, match="Path traversal detected"):
             validate_file_path("subdir/../../secret")
 
     def test_path_outside_project(self, tmp_path):
@@ -27,13 +32,13 @@ class TestValidateFilePath:
         outside_file = tmp_path / "outside.py"
         outside_file.touch()
 
-        with pytest.raises(ValueError, match="Path outside allowed directories"):
+        with pytest.raises(PathValidationError, match="Path outside allowed directories"):
             validate_file_path(str(outside_file))
 
     def test_long_path(self):
         """Test path length limit."""
         long_path = "a/" * 2500  # > 4096 chars
-        with pytest.raises(ValueError, match="Path exceeds maximum length"):
+        with pytest.raises(PathValidationError, match="Path exceeds maximum length"):
             validate_file_path(long_path)
 
 
@@ -46,15 +51,15 @@ class TestValidateIncludePattern:
 
     def test_invalid_characters(self):
         """Test invalid characters in pattern."""
-        with pytest.raises(ValueError, match="Invalid include pattern"):
+        with pytest.raises(PathValidationError, match="Invalid include pattern"):
             validate_include_pattern("*.py; rm -rf /")
 
-        with pytest.raises(ValueError, match="Invalid include pattern"):
+        with pytest.raises(PathValidationError, match="Invalid include pattern"):
             validate_include_pattern("$(whoami)")
 
     def test_path_traversal_in_pattern(self):
         """Test path traversal in pattern."""
-        with pytest.raises(ValueError, match="Include pattern cannot contain '..'"):
+        with pytest.raises(PathValidationError, match="Include pattern cannot contain '..'"):
             validate_include_pattern("../src/*.py")
 
 
@@ -74,7 +79,13 @@ class TestCheckXmlSecurity:
 
     def test_large_content(self):
         """Test content size limit."""
-        # Mock MAX_XML_CONTENT_SIZE by patching the constant if possible,
-        # or generate a large string (expensive).
-        # For now, we'll trust the logic and just check the function accepts reasonable size.
-        pass
+        # Test with content that exceeds reasonable size limits
+        # Using a smaller size for testing to avoid resource issues
+        large_content = "x" * 100000  # 100KB of content
+        # The function should handle this gracefully without raising
+        # (it logs a warning but doesn't raise for large content)
+        try:
+            check_xml_security(large_content)
+        except Exception as e:
+            # If it raises, verify it's a size-related error
+            assert "size" in str(e).lower() or "limit" in str(e).lower()
