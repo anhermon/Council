@@ -2,7 +2,9 @@
 
 import asyncio
 import os
+import time
 import uuid
+from datetime import datetime
 
 import logfire
 from fastmcp import FastMCP
@@ -10,6 +12,8 @@ from pydantic import BaseModel, Field
 
 from .agents import CouncilDeps, ReviewResult, get_councilor_agent
 from .tools.context import get_packed_context, get_packed_diff
+from .tools.metrics_collector import get_metrics_collector
+from .tools.persistence import ReviewRecord, get_review_history
 from .tools.scribe import fetch_and_summarize, validate_topic, validate_url
 
 # Configuration with environment variable support
@@ -22,6 +26,8 @@ logfire.configure(send_to_logfire=LOGFIRE_ENABLED)
 
 # Create FastMCP server
 mcp = FastMCP("The Council")
+
+__all__ = ["mcp", "review_code", "learn_rules", "ReviewCodeResponse", "LearnRulesResponse"]
 
 
 # Structured output models for MCP tools (MCP 2025-06-18 specification)
@@ -90,11 +96,17 @@ async def review_code(file_path: str, base_ref: str | None = None) -> ReviewCode
     # Generate request ID for correlation
     request_id = str(uuid.uuid4())[:8]
 
+    # Initialize metrics and persistence
+    metrics_collector = get_metrics_collector()
+    review_history = get_review_history()
+    review_metrics = metrics_collector.start_review(request_id, file_path)
+
     try:
         logfire.info("Starting code review", file_path=file_path, request_id=request_id)
 
         # Get packed context using Repomix with timeout
         # Use diff-based extraction if base_ref is provided
+        context_start = time.time()
         try:
             if base_ref:
                 packed_xml = await asyncio.wait_for(
@@ -104,9 +116,16 @@ async def review_code(file_path: str, base_ref: str | None = None) -> ReviewCode
                 packed_xml = await asyncio.wait_for(
                     get_packed_context(file_path), timeout=REQUEST_TIMEOUT
                 )
+            context_duration = time.time() - context_start
+            metrics_collector.record_tool_execution("repomix", context_duration, success=True)
         except TimeoutError:
+            context_duration = time.time() - context_start
+            metrics_collector.record_tool_execution(
+                "repomix", context_duration, success=False, error_type="TimeoutError"
+            )
             error_msg = f"Timeout while processing file: {file_path}"
             logfire.error("Timeout during context packing", error=error_msg, request_id=request_id)
+            metrics_collector.finish_review(request_id, success=False, error_type="TimeoutError")
             return ReviewCodeResponse(success=False, error=error_msg)
 
         # Size check for large content
@@ -155,6 +174,47 @@ async def review_code(file_path: str, base_ref: str | None = None) -> ReviewCode
         # Extract the structured result
         review_result: ReviewResult = result.output
 
+        # Extract token usage if available
+        token_usage: dict[str, int] = {}
+        if hasattr(result, "usage") and result.usage:
+            if hasattr(result.usage, "input_tokens"):
+                token_usage["input_tokens"] = result.usage.input_tokens
+            if hasattr(result.usage, "output_tokens"):
+                token_usage["output_tokens"] = result.usage.output_tokens
+            if hasattr(result.usage, "total_tokens"):
+                token_usage["total_tokens"] = result.usage.total_tokens
+
+        # Finish metrics collection
+        metrics_collector.finish_review(
+            request_id,
+            success=True,
+            issues_found=len(review_result.issues),
+            severity=review_result.severity,
+            context_size_bytes=len(packed_xml),
+            token_usage=token_usage,
+        )
+
+        # Save review to history
+        try:
+            review_record = ReviewRecord(
+                review_id=request_id,
+                file_path=file_path,
+                timestamp=datetime.now().isoformat(),
+                duration_seconds=review_metrics.duration_seconds or 0.0,
+                success=True,
+                error_type=None,
+                issues_found=len(review_result.issues),
+                severity=review_result.severity,
+                context_size_bytes=len(packed_xml),
+                token_usage=token_usage,
+                summary=review_result.summary,
+                metadata={"base_ref": base_ref} if base_ref else None,
+            )
+            review_history.save_review(review_record)
+        except Exception as e:
+            # Don't fail the review if persistence fails
+            logfire.warning("Failed to save review history", error=str(e))
+
         # Return structured response (MCP 2025-06-18 structured output)
         return ReviewCodeResponse(
             success=True,
@@ -199,14 +259,18 @@ async def review_code(file_path: str, base_ref: str | None = None) -> ReviewCode
     except FileNotFoundError as e:
         error_msg = f"File not found: {str(e)}"
         logfire.error("Review failed", error=error_msg, request_id=request_id)
+        metrics_collector.finish_review(request_id, success=False, error_type="FileNotFoundError")
         return ReviewCodeResponse(success=False, error=error_msg)
     except PermissionError as e:
         error_msg = f"Permission denied: {str(e)}"
         logfire.error("Review failed", error=error_msg, request_id=request_id)
+        metrics_collector.finish_review(request_id, success=False, error_type="PermissionError")
         return ReviewCodeResponse(success=False, error=error_msg)
     except Exception as e:
         error_msg = f"Review failed: {str(e)}"
+        error_type = type(e).__name__
         logfire.error("Review failed", error=error_msg, request_id=request_id, exc_info=True)
+        metrics_collector.finish_review(request_id, success=False, error_type=error_type)
         return ReviewCodeResponse(success=False, error=error_msg)
 
 
