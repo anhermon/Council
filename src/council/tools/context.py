@@ -10,6 +10,7 @@ from pathlib import Path
 import logfire
 
 from ..config import settings
+from .utils import run_command_safely
 
 # Maximum path length to prevent DoS attacks
 MAX_PATH_LENGTH = 4096
@@ -133,7 +134,7 @@ def _get_file_hash(file_path: Path) -> str:
         # Include path, modification time, and size in hash
         hash_input = f"{file_path}{stat.st_mtime}{stat.st_size}"
         return hashlib.sha256(hash_input.encode()).hexdigest()
-    except Exception as e:
+    except (OSError, ValueError) as e:
         logfire.warning("Failed to generate file hash", file=str(file_path), error=str(e))
         # Fallback: use path only
         return hashlib.sha256(str(file_path).encode()).hexdigest()
@@ -360,27 +361,32 @@ async def get_packed_diff(file_path: str, base_ref: str = "HEAD") -> str:
             rel_path = str(resolved_path).replace(str(project_root) + "/", "")
 
         # Run git diff to get changed files
-        proc = await asyncio.create_subprocess_exec(
-            "git",
-            "diff",
-            "--name-only",
-            base_ref,
-            "--",
-            rel_path,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            cwd=str(project_root),
-        )
+        try:
+            stdout, stderr, return_code = await run_command_safely(
+                [
+                    "git",
+                    "diff",
+                    "--name-only",
+                    base_ref,
+                    "--",
+                    rel_path,
+                ],
+                cwd=project_root,
+                timeout=60.0,
+                check=False,
+            )
 
-        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=60.0)
+            if return_code != 0:
+                error_msg = stderr or "Unknown error"
+                logfire.warning("Git diff failed, falling back to full context", error=error_msg)
+                # Fall back to regular context extraction
+                return await get_packed_context(file_path)
 
-        if proc.returncode != 0:
-            error_msg = stderr.decode("utf-8", errors="replace")
-            logfire.warning("Git diff failed, falling back to full context", error=error_msg)
+            changed_files = stdout.strip().split("\n")
+        except TimeoutError:
+            logfire.warning("Git diff timed out, falling back to full context")
             # Fall back to regular context extraction
             return await get_packed_context(file_path)
-
-        changed_files = stdout.decode("utf-8", errors="replace").strip().split("\n")
         changed_files = [f for f in changed_files if f.strip()]
 
         if not changed_files:
@@ -402,7 +408,8 @@ async def get_packed_diff(file_path: str, base_ref: str = "HEAD") -> str:
                 except AttributeError:
                     if str(changed_path).startswith(str(project_root)) and changed_path.exists():
                         valid_changed_files.append(changed_file)
-            except Exception:
+            except (OSError, ValueError, AttributeError):
+                # Skip invalid paths and continue processing
                 continue
 
         if not valid_changed_files:
@@ -502,7 +509,13 @@ async def get_packed_diff(file_path: str, base_ref: str = "HEAD") -> str:
                 with contextlib.suppress(Exception):
                     Path(output_path).unlink(missing_ok=True)
 
-    except Exception as e:
+    except (ValueError, FileNotFoundError, RuntimeError, TimeoutError) as e:
+        # Re-raise specific exceptions that shouldn't fall back
         logfire.warning("Diff extraction failed, falling back to full context", error=str(e))
+        # Fall back to regular context extraction
+        return await get_packed_context(file_path)
+    except Exception as e:
+        # Catch-all for truly unexpected errors
+        logfire.error("Diff extraction failed unexpectedly", error=str(e))
         # Fall back to regular context extraction
         return await get_packed_context(file_path)

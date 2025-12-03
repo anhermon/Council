@@ -46,7 +46,7 @@ What is the Model Context Protocol (MCP)?
 *   [Build an MCP server](https://modelcontextprotocol.io/docs/develop/build-server)
 *   [Build an MCP client](https://modelcontextprotocol.io/docs/develop/build-client)
 *   [SDKs](https://modelcontextprotocol.io/docs/sdk)
-*   Security 
+*   Security
 
 ##### Developer tools
 

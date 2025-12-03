@@ -83,23 +83,23 @@ Parameters
 
 _arrow\_drop\_down_
 
- 
+
 
 The target URL to fetch content from
 
- 
 
-Add API Key for Higher Rate Limit 
+
+Add API Key for Higher Rate Limit
 
 Enter your Jina API key to access a higher rate limit. For latest rate limit information, please refer to the table below.
 
 [_open\_in\_new_ Learn more](https://jina.ai/reader#rate-limit)
 
-- [x] 
+- [x]
 
- 
 
-Browser Engine (Quality/Speed) 
+
+Browser Engine (Quality/Speed)
 
 Choose the browser engine for fetching the webpage content. This affects the quality, speed, completeness, accessibility of the content.
 
@@ -107,11 +107,11 @@ Default
 
 _arrow\_drop\_down_
 
- 
 
- 
 
-Content Format 
+
+
+Content Format
 
 You can control the level of detail in the response to prevent over-filtering. The default pipeline is optimized for most websites and LLM input.
 
@@ -119,35 +119,35 @@ Default
 
 _arrow\_drop\_down_
 
- 
 
- 
 
-JSON Response 
+
+
+JSON Response
 
 The response will be in JSON format, containing the URL, title, content, and timestamp (if available). In Search mode, it returns a list of five entries, each following the described JSON structure.
 
-- [x] 
+- [x]
 
- 
 
-Timeout 
+
+Timeout
 
 Maximum page load wait time, use this if you find default browser engine is too slow on simple webpage.
 
-- [x] 
+- [x]
 
- 
 
-Token Budget 
+
+Token Budget
 
 Limits the maximum number of tokens used for this request. Exceeding this limit will cause the request to fail.
 
-- [x] 
+- [x]
 
- 
 
-Use ReaderLM-v2 
+
+Use ReaderLM-v2
 
 Experimental
 
@@ -155,77 +155,77 @@ Uses ReaderLM-v2 for HTML to Markdown conversion, to deliver high-quality result
 
 [_open\_in\_new_ Learn more](https://jina.ai/news/readerlm-v2-frontier-small-language-model-for-html-to-markdown-and-json)
 
-- [x] 
+- [x]
 
- 
 
-CSS Selector: Only 
+
+CSS Selector: Only
 
 List of CSS selectors to target specific page elements.
 
-- [x] 
+- [x]
 
- 
 
-body 
 
-.class 
+body
 
-#id 
+.class
 
- 
+#id
 
-CSS Selector: Wait-For 
+
+
+CSS Selector: Wait-For
 
 CSS selectors to wait for before returning results.
 
-- [x] 
+- [x]
 
- 
 
-body 
 
-.class 
+body
 
-#id 
+.class
 
- 
+#id
 
-CSS Selector: Excluding 
+
+
+CSS Selector: Excluding
 
 CSS selectors for elements to remove (headers, footers, etc.).
 
-- [x] 
+- [x]
 
- 
 
-header 
 
-.class 
+header
 
-#id 
+.class
 
- 
+#id
 
-Remove All Images 
+
+
+Remove All Images
 
 Remove all images from the response.
 
-- [x] 
+- [x]
 
- 
 
-Target Gpt-Oss Series Model 
+
+Target Gpt-Oss Series Model
 
 Use gpt-oss internal browser citation format for links.
 
 [_open\_in\_new_ Learn more](https://cookbook.openai.com/articles/openai-harmony#browser-tool)
 
-- [x] 
+- [x]
 
- 
 
-Gather All Links At the End 
+
+Gather All Links At the End
 
 A "Buttons & Links" section will be created at the end. This helps the downstream LLMs or web agents navigating the page or take further actions.
 
@@ -233,11 +233,11 @@ None
 
 _arrow\_drop\_down_
 
- 
 
- 
 
-Gather All Images At the End 
+
+
+Gather All Images At the End
 
 An "Images" section will be created at the end. This gives the downstream LLMs an overview of all visuals on the page, which may improve reasoning.
 
@@ -245,11 +245,11 @@ None
 
 _arrow\_drop\_down_
 
- 
 
- 
 
-Viewport Config 
+
+
+Viewport Config
 
 POST
 
@@ -257,69 +257,69 @@ Sets browser viewport dimensions for responsive rendering.
 
 [_open\_in\_new_ Learn more](https://pptr.dev/api/puppeteer.viewport)
 
-- [x] 
+- [x]
 
- 
 
-Forward Cookie 
+
+Forward Cookie
 
 Our API server can forward your custom cookie settings when accessing the URL, which is useful for pages requiring extra authentication. Note that requests with cookies will not be cached.
 
 [_open\_in\_new_ Learn more](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Set-Cookie)
 
-- [x] 
+- [x]
 
- 
+
 
 <cookie-name>=<cookie-value>
 
 <cookie-name-1>=<cookie-value>; domain=<cookie-1-domain>
 
- 
 
-Image Caption 
+
+Image Caption
 
 Captions all images at the specified URL, adding 'Image [idx]: [caption]' as an alt tag for those without one. This allows downstream LLMs to interact with the images in activities such as reasoning and summarizing.
 
-- [x] 
+- [x]
 
- 
 
-Use a Proxy Server 
+
+Use a Proxy Server
 
 Our API server can utilize your proxy to access URLs, which is helpful for pages accessible only through specific proxies.
 
 [_open\_in\_new_ Learn more](https://en.wikipedia.org/wiki/Proxy_server)
 
-- [x] 
+- [x]
 
- 
 
-Use a Country-Specific Proxy Server 
+
+Use a Country-Specific Proxy Server
 
 Set country code for location-based proxy server. Use 'auto' for optimal selection or 'none' to disable.
 
-- [x] 
+- [x]
 
- 
 
-Bypass Cached Content 
+
+Bypass Cached Content
 
 Our API caches URL contents for a certain amount of time. Set it to true to ignore the cached result and fetch the content from the URL directly.
 
-- [x] 
+- [x]
 
- 
 
-Do Not Cache & Track! 
+
+Do Not Cache & Track!
 
 When enabled, the requested URL won't be cached and tracked on our server.
 
-- [x] 
+- [x]
 
- 
 
-Github Flavored Markdown 
+
+Github Flavored Markdown
 
 Opt in/out features from GFM (Github Flavored Markdown).
 
@@ -327,63 +327,63 @@ Enabled
 
 _arrow\_drop\_down_
 
- 
 
- 
 
-Stream Mode 
+
+
+Stream Mode
 
 Stream mode is beneficial for large target pages, allowing more time for the page to fully render. If standard mode results in incomplete content, consider using Stream mode.
 
 [_open\_in\_new_ Learn more](https://github.com/jina-ai/reader?tab=readme-ov-file#streaming-mode)
 
-- [x] 
+- [x]
 
- 
 
-Customize Browser Locale 
+
+Customize Browser Locale
 
 Control the browser locale to render the page. Lots of websites serve different content based on the locale.
 
 [_open\_in\_new_ Learn more](https://developer.mozilla.org/en-US/docs/Web/API/Navigator/language)
 
-- [x] 
+- [x]
 
- 
 
-Strictly comply robots policy 
+
+Strictly comply robots policy
 
 Define bot User-Agent to check against robots.txt before fetching content.
 
-- [x] 
+- [x]
 
- 
 
-iframe Extraction 
+
+iframe Extraction
 
 Processes content from all embedded iframes in the DOM tree.
 
-- [x] 
+- [x]
 
- 
 
-Shadow DOM Extraction 
+
+Shadow DOM Extraction
 
 Extracts content from all Shadow DOM roots in the document.
 
-- [x] 
+- [x]
 
- 
 
-Follow Redirect 
+
+Follow Redirect
 
 Choose whether to resolve to the final destination URL after following all redirects. Enable to follow the full redirect chain.
 
-- [x] 
+- [x]
 
- 
 
-Local PDF/HTML file 
+
+Local PDF/HTML file
 
 POST
 
@@ -391,11 +391,11 @@ Use Reader on your local PDF and HTML file by uploading them. Only support pdf a
 
 _upload_
 
- 
 
- 
 
-Pre-run JavaScript 
+
+
+Pre-run JavaScript
 
 POST
 
@@ -403,11 +403,11 @@ Executes preprocessing JS code (inline string or remote URL).
 
 [_open\_in\_new_ Learn more](https://developer.mozilla.org/en-US/docs/Web/JavaScript)
 
-- [x] 
+- [x]
 
- 
 
-Heading Style 
+
+Heading Style
 
 Sets markdown heading format (passed to Turndown).
 
@@ -415,19 +415,19 @@ Alternative Heading Syntax
 
 _arrow\_drop\_down_
 
- 
 
- 
 
-Horizontal Rule Style 
+
+
+Horizontal Rule Style
 
 Defines markdown horizontal rule format (passed to Turndown).
 
-- [x] 
+- [x]
 
- 
 
-Bullet Point Style 
+
+Bullet Point Style
 
 Sets bullet list marker character (passed to Turndown).
 
@@ -435,11 +435,11 @@ Sets bullet list marker character (passed to Turndown).
 
 _arrow\_drop\_down_
 
- 
 
- 
 
-Emphasis Style 
+
+
+Emphasis Style
 
 Defines markdown emphasis delimiter (passed to Turndown).
 
@@ -447,11 +447,11 @@ _
 
 _arrow\_drop\_down_
 
- 
 
- 
 
-Strong Emphasis Style 
+
+
+Strong Emphasis Style
 
 Sets markdown strong emphasis delimiter (passed to Turndown).
 
@@ -459,11 +459,11 @@ Sets markdown strong emphasis delimiter (passed to Turndown).
 
 _arrow\_drop\_down_
 
- 
 
- 
 
-Link Style 
+
+
+Link Style
 
 Determines markdown link format (passed to Turndown).
 
@@ -471,19 +471,19 @@ Inline
 
 _arrow\_drop\_down_
 
- 
 
- 
 
-EU Compliance 
+
+
+EU Compliance
 
 Experimental
 
 All infrastructure and data processing operations reside entirely within EU jurisdiction.
 
-- [x] 
+- [x]
 
- 
+
 
 * * *
 
@@ -491,7 +491,7 @@ _upload_
 
 Request
 
-- [x] 
+- [x]
 
 GET
 
@@ -501,7 +501,7 @@ Language
 
 _arrow\_drop\_down_
 
- 
+
 
 _wrap\_text_
 
@@ -531,7 +531,7 @@ Available tokens
 
 This is your unique key. Store it securely!
 
- 
+
 
 [ReaderLM v2: Small Language Model for HTML to Markdown and JSON](https://jina.ai/reader)
 -----------------------------------------------------------------------------------------
@@ -555,7 +555,7 @@ _open\_in\_new_
 
 Click below to fetch the source code of the page directly
 
- 
+
 
 * * *
 
@@ -565,7 +565,7 @@ _content\_copy_ _open\_in\_new_
 
 Click below to obtain the content through our Reader API
 
- 
+
 
 * * *
 
@@ -591,7 +591,7 @@ _send_
 
 Input a question and combine it with the fetched content for LLM to generate an answer
 
- 
+
 
 [Reader for web search and SERP](https://jina.ai/reader#search)
 ---------------------------------------------------------------
@@ -606,7 +606,7 @@ Enter your query
 
 Type a question that requires latest information or world knowledge.
 
- 
+
 
 * * *
 
@@ -616,7 +616,7 @@ _content\_copy_ _open\_in\_new_
 
 If you use this URL in code, dont forget to encode the URL.
 
- 
+
 
 * * *
 
@@ -659,7 +659,7 @@ Columns
 
 _arrow\_drop\_down_
 
- 
+
 
 _fullscreen_
 
@@ -704,7 +704,7 @@ _error_
 
 _visibility\_off_
 
- 
+
 
 _verified\_user_
 
@@ -716,7 +716,7 @@ Toy Experiment
 
 10 Million
 
-Tokens valid for: 
+Tokens valid for:
 
 _![Image 19](https://jina.ai/assets/reader-D06QTWF1.svg)_ _![Image 20](https://jina.ai/assets/embedding-DzEuY8\_E.svg)_ _![Image 21](https://jina.ai/assets/reranker-DudpN0Ck.svg)_ _![Image 22](blob:http://localhost/db267ccec0291b9762c00dd4567c6a5c)_ _![Image 23](blob:http://localhost/47430e9cbced04c539a17eb39573e3a9)_ _![Image 24](blob:http://localhost/d9cb1deb4878909b05c9cd0f15af4aac)_
 
@@ -730,7 +730,7 @@ Prototype Development
 
 1 Billion
 
-Tokens valid for: 
+Tokens valid for:
 
 _![Image 25](https://jina.ai/assets/reader-D06QTWF1.svg)_ _![Image 26](https://jina.ai/assets/embedding-DzEuY8\_E.svg)_ _![Image 27](https://jina.ai/assets/reranker-DudpN0Ck.svg)_ _![Image 28](blob:http://localhost/db267ccec0291b9762c00dd4567c6a5c)_ _![Image 29](blob:http://localhost/47430e9cbced04c539a17eb39573e3a9)_ _![Image 30](blob:http://localhost/d9cb1deb4878909b05c9cd0f15af4aac)_
 
@@ -750,7 +750,7 @@ Production Deployment
 
 11 Billion
 
-Tokens valid for: 
+Tokens valid for:
 
 _![Image 31](https://jina.ai/assets/reader-D06QTWF1.svg)_ _![Image 32](https://jina.ai/assets/embedding-DzEuY8\_E.svg)_ _![Image 33](https://jina.ai/assets/reranker-DudpN0Ck.svg)_ _![Image 34](blob:http://localhost/db267ccec0291b9762c00dd4567c6a5c)_ _![Image 35](blob:http://localhost/47430e9cbced04c539a17eb39573e3a9)_ _![Image 36](blob:http://localhost/d9cb1deb4878909b05c9cd0f15af4aac)_
 
@@ -786,7 +786,7 @@ Columns
 
 _arrow\_drop\_down_
 
- 
+
 
 _fullscreen_
 
@@ -818,9 +818,9 @@ Top up when
 
 _arrow\_drop\_down_
 
- 
 
- 
+
+
 
 [FAQ](https://jina.ai/reader#faq)
 ---------------------------------
@@ -979,7 +979,7 @@ Columns
 
 _arrow\_drop\_down_
 
- 
+
 
 _fullscreen_
 

@@ -881,7 +881,7 @@ When running as an MCP server, Repomix provides the following tools:
 
 1.   **pack_codebase**: Package a local code directory into a consolidated XML file for AI analysis
 
-*   Parameters: 
+*   Parameters:
     *   `directory`: Absolute path to the directory to pack
     *   `compress`: (Optional, default: false) Enable Tree-sitter compression to extract essential code signatures and structure while removing implementation details. Reduces token usage by ~70% while preserving semantic meaning. Generally not needed since grep_repomix_output allows incremental content retrieval. Use only when you specifically need the entire codebase content for large repositories.
     *   `includePatterns`: (Optional) Specify files to include using fast-glob patterns. Multiple patterns can be comma-separated (e.g., "**/*.{js,ts}", "src/**,docs/**"). Only matching files will be processed.
@@ -890,11 +890,11 @@ When running as an MCP server, Repomix provides the following tools:
 
 1.   **attach_packed_output**: Attach an existing Repomix packed output file for AI analysis
 
-*   Parameters: 
+*   Parameters:
     *   `path`: Path to a directory containing repomix-output.xml or direct path to a packed repository XML file
     *   `topFilesLength`: (Optional, default: 10) Number of largest files by size to display in the metrics summary
 
-*   Features: 
+*   Features:
     *   Accepts either a directory containing a repomix-output.xml file or a direct path to an XML file
     *   Registers the file with the MCP server and returns the same structure as the pack_codebase tool
     *   Provides secure access to existing packed outputs without requiring re-processing
@@ -902,7 +902,7 @@ When running as an MCP server, Repomix provides the following tools:
 
 1.   **pack_remote_repository**: Fetch, clone, and package a GitHub repository into a consolidated XML file for AI analysis
 
-*   Parameters: 
+*   Parameters:
     *   `remote`: GitHub repository URL or user/repo format (e.g., "yamadashy/repomix", "[https://github.com/user/repo](https://github.com/user/repo)", or "[https://github.com/user/repo/tree/branch](https://github.com/user/repo/tree/branch)")
     *   `compress`: (Optional, default: false) Enable Tree-sitter compression to extract essential code signatures and structure while removing implementation details. Reduces token usage by ~70% while preserving semantic meaning. Generally not needed since grep_repomix_output allows incremental content retrieval. Use only when you specifically need the entire codebase content for large repositories.
     *   `includePatterns`: (Optional) Specify files to include using fast-glob patterns. Multiple patterns can be comma-separated (e.g., "**/*.{js,ts}", "src/**,docs/**"). Only matching files will be processed.
@@ -911,12 +911,12 @@ When running as an MCP server, Repomix provides the following tools:
 
 1.   **read_repomix_output**: Read the contents of a Repomix-generated output file. Supports partial reading with line range specification for large files.
 
-*   Parameters: 
+*   Parameters:
     *   `outputId`: ID of the Repomix output file to read
     *   `startLine`: (Optional) Starting line number (1-based, inclusive). If not specified, reads from beginning.
     *   `endLine`: (Optional) Ending line number (1-based, inclusive). If not specified, reads to end.
 
-*   Features: 
+*   Features:
     *   Specifically designed for web-based environments or sandboxed applications
     *   Retrieves the content of previously generated outputs using their ID
     *   Provides secure access to packed codebase without requiring file system access
@@ -924,7 +924,7 @@ When running as an MCP server, Repomix provides the following tools:
 
 1.   **grep_repomix_output**: Search for patterns in a Repomix output file using grep-like functionality with JavaScript RegExp syntax
 
-*   Parameters: 
+*   Parameters:
     *   `outputId`: ID of the Repomix output file to search
     *   `pattern`: Search pattern (JavaScript RegExp regular expression syntax)
     *   `contextLines`: (Optional, default: 0) Number of context lines to show before and after each match. Overridden by beforeLines/afterLines if specified.
@@ -932,7 +932,7 @@ When running as an MCP server, Repomix provides the following tools:
     *   `afterLines`: (Optional) Number of context lines to show after each match (like grep -A). Takes precedence over contextLines.
     *   `ignoreCase`: (Optional, default: false) Perform case-insensitive matching
 
-*   Features: 
+*   Features:
     *   Uses JavaScript RegExp syntax for powerful pattern matching
     *   Supports context lines for better understanding of matches
     *   Allows separate control of before/after context lines
@@ -940,20 +940,20 @@ When running as an MCP server, Repomix provides the following tools:
 
 1.   **file_system_read_file**: Read a file from the local file system using an absolute path. Includes built-in security validation to detect and prevent access to files containing sensitive information.
 
-*   Parameters: 
+*   Parameters:
     *   `path`: Absolute path to the file to read
 
-*   Security features: 
+*   Security features:
     *   Implements security validation using [Secretlint](https://github.com/secretlint/secretlint)
     *   Prevents access to files containing sensitive information (API keys, passwords, secrets)
     *   Validates absolute paths to prevent directory traversal attacks
 
 1.   **file_system_read_directory**: List the contents of a directory using an absolute path. Returns a formatted list showing files and subdirectories with clear indicators.
 
-*   Parameters: 
+*   Parameters:
     *   `path`: Absolute path to the directory to list
 
-*   Features: 
+*   Features:
     *   Shows files and directories with clear indicators (`[FILE]` or `[DIR]`)
     *   Provides safe directory traversal with proper error handling
     *   Validates paths and ensures they are absolute
@@ -1303,7 +1303,7 @@ Repomix offers multiple methods to set ignore patterns for excluding specific fi
 Priority Order (from highest to lowest):
 
 1.   Custom patterns (`ignore.customPatterns`)
-2.   Ignore files (`.repomixignore`, `.ignore`, `.gitignore`, and `.git/info/exclude`): 
+2.   Ignore files (`.repomixignore`, `.ignore`, `.gitignore`, and `.git/info/exclude`):
     *   When in nested directories, files in deeper directories have higher priority
     *   When in the same directory, these files are merged in no particular order
 
@@ -1531,7 +1531,7 @@ async function packProject() {
     compress: true,
     quiet: true
   } as CliOptions;
-  
+
   const result = await runCli(['.'], process.cwd(), options);
   return result.packResult;
 }
@@ -1549,7 +1549,7 @@ async function processRemoteRepo(repoUrl) {
     output: 'output.xml',
     compress: true
   } as CliOptions;
-  
+
   return await runCli(['.'], process.cwd(), options);
 }
 
@@ -1565,10 +1565,10 @@ async function analyzeFiles(directory) {
   const { filePaths } = await searchFiles(directory, { /* config */ });
   const rawFiles = await collectFiles(filePaths, directory);
   const processedFiles = await processFiles(rawFiles, { /* config */ });
-  
+
   // Count tokens
   const tokenCounter = new TokenCounter('o200k_base');
-  
+
   // Return analysis results
   return processedFiles.map(file => ({
     path: file.path,

@@ -106,7 +106,7 @@ async def analyze_architecture(file_path: str, base_path: str | None = None) -> 
                             methods = [
                                 n
                                 for n in node.body
-                                if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
+                                if isinstance(n, ast.FunctionDef | ast.AsyncFunctionDef)
                             ]
                             if len(methods) > 20:
                                 anti_patterns.append(
@@ -119,7 +119,7 @@ async def analyze_architecture(file_path: str, base_path: str | None = None) -> 
                 # Long parameter list
                 for node in ast.walk(tree):
                     if (
-                        isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+                        isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
                         and len(node.args.args) > 7
                     ):
                         anti_patterns.append(
@@ -143,7 +143,7 @@ async def analyze_architecture(file_path: str, base_path: str | None = None) -> 
                     nonlocal max_depth
                     max_depth = max(max_depth, depth)
                     for child in ast.iter_child_nodes(node):
-                        if isinstance(child, (ast.If, ast.For, ast.While, ast.Try, ast.With)):
+                        if isinstance(child, ast.If | ast.For | ast.While | ast.Try | ast.With):
                             check_depth(child, depth + 1)
 
                 check_depth(tree)

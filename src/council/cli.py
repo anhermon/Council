@@ -915,7 +915,7 @@ def _handle_common_errors(e: Exception) -> None:
         e: The exception to handle. Will be categorized and appropriate
            error message will be displayed before exiting.
     """
-    if isinstance(e, (ValueError, TypeError, KeyError)):
+    if isinstance(e, ValueError | TypeError | KeyError):
         click.echo(f"❌ Configuration error: {e}", err=True)
         sys.exit(1)
     elif isinstance(e, FileNotFoundError):
@@ -1498,7 +1498,7 @@ def housekeeping():
             file_needs_docs = False
             for node in ast.walk(tree):
                 if (
-                    isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+                    isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
                     and not ast.get_docstring(node)
                     and not node.name.startswith("_")
                 ):

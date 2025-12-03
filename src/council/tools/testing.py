@@ -1,6 +1,6 @@
 """Testing tools for test coverage and quality analysis."""
 
-import asyncio
+import json
 import re
 from typing import Any
 
@@ -8,9 +8,7 @@ import logfire
 
 from ..config import settings
 from .path_utils import resolve_file_path
-
-# Maximum file size to read (10MB)
-MAX_FILE_SIZE = 10 * 1024 * 1024
+from .utils import run_command_safely
 
 
 async def find_related_tests(file_path: str, base_path: str | None = None) -> list[str]:
@@ -19,16 +17,26 @@ async def find_related_tests(file_path: str, base_path: str | None = None) -> li
 
     This tool searches for test files that might test the given file,
     using common naming conventions (test_*.py, *_test.py, etc.).
+    The search includes checking imports in test files to find files that
+    import the target module.
 
     Args:
         file_path: Path to the code file
+        base_path: Optional base path to resolve relative paths from
 
     Returns:
-        List of paths to related test files
+        List of paths to related test files (limited to 20 results)
 
     Raises:
         ValueError: If path is invalid
         FileNotFoundError: If file doesn't exist
+        RuntimeError: If an unexpected error occurs during search
+
+    Note:
+        This function does not have explicit timeout handling as it primarily
+        performs file system operations which are typically fast. File reading
+        operations may take longer for large test files but are not expected to
+        exceed reasonable limits.
     """
     logfire.info("Finding related tests", file_path=file_path, base_path=base_path)
 
@@ -125,9 +133,16 @@ async def find_related_tests(file_path: str, base_path: str | None = None) -> li
         logfire.info("Found related tests", file_path=file_path, count=len(found_tests))
         return found_tests[:20]  # Limit to 20 results
 
-    except Exception as e:
+    except (ValueError, FileNotFoundError) as e:
+        # Re-raise specific exceptions as-is
         logfire.error("Failed to find related tests", file_path=file_path, error=str(e))
         raise
+    except Exception as e:
+        # Catch-all for unexpected errors
+        logfire.error(
+            "Failed to find related tests unexpectedly", file_path=file_path, error=str(e)
+        )
+        raise RuntimeError(f"Failed to find related tests: {str(e)}") from e
 
 
 async def check_test_coverage(file_path: str, base_path: str | None = None) -> dict[str, Any]:
@@ -135,10 +150,12 @@ async def check_test_coverage(file_path: str, base_path: str | None = None) -> d
     Check test coverage for a file using coverage.py.
 
     This tool runs coverage analysis to determine how much of the code
-    is covered by tests.
+    is covered by tests. It requires that tests have been run with coverage.py
+    first to generate coverage data.
 
     Args:
         file_path: Path to the file to check coverage for
+        base_path: Optional base path to resolve relative paths from
 
     Returns:
         Dictionary with coverage information:
@@ -146,11 +163,23 @@ async def check_test_coverage(file_path: str, base_path: str | None = None) -> d
         - coverage_percent: Coverage percentage (0-100)
         - lines_covered: Number of lines covered
         - lines_total: Total number of lines
-        - missing_lines: List of line numbers not covered
+        - missing_lines: List of line numbers not covered (limited to 100)
+        - note: Optional note explaining why coverage data is unavailable
 
     Raises:
         ValueError: If path is invalid
         FileNotFoundError: If file doesn't exist
+        RuntimeError: If an unexpected error occurs
+
+    Timeout Behavior:
+        - Tool availability check: Uses settings.tool_check_timeout (default 10 seconds)
+        - Coverage report generation: Uses settings.test_timeout (default 60 seconds)
+        - If timeout occurs, returns a result indicating coverage data is unavailable
+        - Processes are properly cleaned up on timeout to prevent resource leaks
+
+    Note:
+        Only supports Python files (.py extension). For other file types,
+        returns a result indicating coverage checking is not supported.
     """
     logfire.info("Checking test coverage", file_path=file_path, base_path=base_path)
 
@@ -178,23 +207,13 @@ async def check_test_coverage(file_path: str, base_path: str | None = None) -> d
 
         # Check if coverage.py is available
         try:
-            check_proc = await asyncio.create_subprocess_exec(
-                "coverage",
-                "--version",
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
+            await run_command_safely(
+                [settings.coverage_tool_name, "--version"],
+                cwd=project_root,
+                timeout=settings.tool_check_timeout,
+                check=False,
             )
-            await check_proc.wait()
-            if check_proc.returncode != 0:
-                return {
-                    "covered": False,
-                    "coverage_percent": 0,
-                    "lines_covered": 0,
-                    "lines_total": 0,
-                    "missing_lines": [],
-                    "note": "coverage.py not available",
-                }
-        except Exception:
+        except (RuntimeError, TimeoutError, OSError):
             return {
                 "covered": False,
                 "coverage_percent": 0,
@@ -216,24 +235,22 @@ async def check_test_coverage(file_path: str, base_path: str | None = None) -> d
                 rel_path = str(resolved_path).replace(str(project_root) + "/", "")
 
             # Run coverage report
-            proc = await asyncio.create_subprocess_exec(
-                "coverage",
-                "report",
-                "--include",
-                rel_path,
-                "--format=json",
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                cwd=str(project_root),
+            stdout, stderr, return_code = await run_command_safely(
+                [
+                    settings.coverage_tool_name,
+                    "report",
+                    "--include",
+                    rel_path,
+                    "--format=json",
+                ],
+                cwd=project_root,
+                timeout=settings.test_timeout,
+                check=False,
             )
 
-            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=60.0)
-
-            if proc.returncode == 0 and stdout:
-                import json
-
+            if return_code == 0 and stdout:
                 try:
-                    coverage_data = json.loads(stdout.decode("utf-8", errors="replace"))
+                    coverage_data = json.loads(stdout)
                     files = coverage_data.get("files", {})
                     file_data = files.get(rel_path, {})
 
@@ -265,7 +282,7 @@ async def check_test_coverage(file_path: str, base_path: str | None = None) -> d
                 "note": "Coverage data not available. Run tests with coverage first.",
             }
 
-        except Exception as e:
+        except (TimeoutError, RuntimeError, OSError) as e:
             logfire.warning("Coverage check failed", error=str(e))
             return {
                 "covered": False,
@@ -276,9 +293,14 @@ async def check_test_coverage(file_path: str, base_path: str | None = None) -> d
                 "note": f"Coverage check failed: {str(e)}",
             }
 
-    except Exception as e:
+    except (ValueError, FileNotFoundError) as e:
+        # Re-raise specific exceptions as-is
         logfire.error("Test coverage check failed", file_path=file_path, error=str(e))
         raise
+    except Exception as e:
+        # Catch-all for unexpected errors
+        logfire.error("Test coverage check failed unexpectedly", file_path=file_path, error=str(e))
+        raise RuntimeError(f"Test coverage check failed: {str(e)}") from e
 
 
 async def check_test_quality(test_file: str) -> dict[str, Any]:
@@ -286,22 +308,40 @@ async def check_test_quality(test_file: str) -> dict[str, Any]:
     Analyze test quality and structure.
 
     This tool analyzes a test file to assess test quality, including
-    test structure, assertions, and best practices.
+    test structure, assertions, and best practices. It performs static
+    analysis of the test file content to identify quality issues.
 
     Args:
         test_file: Path to the test file
 
     Returns:
         Dictionary with test quality metrics:
-        - test_count: Number of test functions/methods
-        - assertion_count: Number of assertions
-        - test_coverage: Estimated coverage (if available)
-        - quality_score: Quality score (0-100)
-        - issues: List of quality issues found
+        - test_count: Number of test functions/methods found
+        - assertion_count: Number of assertions found
+        - quality_score: Quality score (0-100), where 100 is perfect
+        - issues: List of quality issues found (e.g., missing docstrings,
+          low assertion ratio, use of global variables)
 
     Raises:
-        ValueError: If path is invalid
+        ValueError: If path is invalid or not a file
         FileNotFoundError: If file doesn't exist
+        RuntimeError: If an unexpected error occurs during analysis
+
+    Timeout Behavior:
+        This function performs file I/O operations only (reading test file content).
+        No explicit timeout is needed as file reading operations are typically
+        fast and bounded by file size limits. Large files may take longer but
+        are expected to complete within reasonable time.
+
+    Note:
+        Only analyzes Python test files (.py extension). For other file types,
+        returns a result indicating test quality analysis is not supported.
+        The quality score is calculated based on:
+        - Presence of docstrings (-10 if missing)
+        - Use of setUp methods (-5 if missing for >3 tests)
+        - Assertion ratio (-15 if <1 per test, -5 if >5 per test)
+        - Use of global variables (-10 if present)
+        - Proper test naming (-20 if no test functions found)
     """
     logfire.info("Checking test quality", test_file=test_file)
 
@@ -391,6 +431,11 @@ async def check_test_quality(test_file: str) -> dict[str, Any]:
         )
         return result
 
-    except Exception as e:
+    except (ValueError, FileNotFoundError) as e:
+        # Re-raise specific exceptions as-is
         logfire.error("Test quality check failed", test_file=test_file, error=str(e))
         raise
+    except Exception as e:
+        # Catch-all for unexpected errors
+        logfire.error("Test quality check failed unexpectedly", test_file=test_file, error=str(e))
+        raise RuntimeError(f"Test quality check failed: {str(e)}") from e

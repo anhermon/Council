@@ -14,6 +14,22 @@ load_dotenv()
 DEFAULT_HTTP_TIMEOUT = 60.0
 DEFAULT_SUBPROCESS_TIMEOUT = 300.0
 
+# Default timeouts for specific operations (in seconds)
+DEFAULT_STATIC_ANALYSIS_TIMEOUT = 300.0
+DEFAULT_TEST_TIMEOUT = 60.0
+DEFAULT_GIT_TIMEOUT = 30.0
+DEFAULT_TOOL_CHECK_TIMEOUT = 10.0
+
+# Default file size limits (in bytes)
+DEFAULT_MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
+DEFAULT_MAX_OUTPUT_SIZE = 10 * 1024 * 1024  # 10MB
+
+# Static analysis tool names
+RUFF_TOOL_NAME = "ruff"
+MYPY_TOOL_NAME = "mypy"
+PYLINT_TOOL_NAME = "pylint"
+COVERAGE_TOOL_NAME = "coverage"
+
 
 @dataclass
 class Settings:
@@ -32,6 +48,20 @@ class Settings:
     # Timeouts (in seconds)
     http_timeout: float = DEFAULT_HTTP_TIMEOUT
     subprocess_timeout: float = DEFAULT_SUBPROCESS_TIMEOUT
+    static_analysis_timeout: float = DEFAULT_STATIC_ANALYSIS_TIMEOUT
+    test_timeout: float = DEFAULT_TEST_TIMEOUT
+    git_timeout: float = DEFAULT_GIT_TIMEOUT
+    tool_check_timeout: float = DEFAULT_TOOL_CHECK_TIMEOUT
+
+    # File size limits (in bytes)
+    max_file_size: int = DEFAULT_MAX_FILE_SIZE
+    max_output_size: int = DEFAULT_MAX_OUTPUT_SIZE
+
+    # Tool names
+    ruff_tool_name: str = RUFF_TOOL_NAME
+    mypy_tool_name: str = MYPY_TOOL_NAME
+    pylint_tool_name: str = PYLINT_TOOL_NAME
+    coverage_tool_name: str = COVERAGE_TOOL_NAME
 
     # Caching
     enable_cache: bool = True
@@ -64,6 +94,16 @@ class Settings:
             subprocess_timeout=cls._parse_float_env(
                 "COUNCIL_SUBPROCESS_TIMEOUT", DEFAULT_SUBPROCESS_TIMEOUT
             ),
+            static_analysis_timeout=cls._parse_float_env(
+                "COUNCIL_STATIC_ANALYSIS_TIMEOUT", DEFAULT_STATIC_ANALYSIS_TIMEOUT
+            ),
+            test_timeout=cls._parse_float_env("COUNCIL_TEST_TIMEOUT", DEFAULT_TEST_TIMEOUT),
+            git_timeout=cls._parse_float_env("COUNCIL_GIT_TIMEOUT", DEFAULT_GIT_TIMEOUT),
+            tool_check_timeout=cls._parse_float_env(
+                "COUNCIL_TOOL_CHECK_TIMEOUT", DEFAULT_TOOL_CHECK_TIMEOUT
+            ),
+            max_file_size=cls._parse_int_env("COUNCIL_MAX_FILE_SIZE", DEFAULT_MAX_FILE_SIZE),
+            max_output_size=cls._parse_int_env("COUNCIL_MAX_OUTPUT_SIZE", DEFAULT_MAX_OUTPUT_SIZE),
             enable_cache=cls._parse_bool_env("COUNCIL_ENABLE_CACHE", True),
             max_concurrent_reviews=cls._parse_int_env("COUNCIL_MAX_CONCURRENT_REVIEWS", 5),
         )

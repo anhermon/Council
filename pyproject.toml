@@ -26,6 +26,7 @@ packages = ["src/council"]
 
 [dependency-groups]
 dev = [
+    "pre-commit",
     "ruff",
     "pytest",
     "pytest-asyncio",
@@ -64,4 +65,3 @@ quote-style = "double"
 indent-style = "space"
 skip-magic-trailing-comma = false
 line-ending = "auto"
-

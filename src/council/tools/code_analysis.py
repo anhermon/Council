@@ -326,7 +326,7 @@ async def write_file(file_path: str, content: str, base_path: str | None = None)
         except AttributeError:
             # Python < 3.9 fallback
             if not str(resolved_path).startswith(str(project_root)):
-                raise ValueError(f"File path must be within project root: {file_path}")
+                raise ValueError(f"File path must be within project root: {file_path}") from None
 
         # Check content size
         if len(content) > MAX_FILE_SIZE:
@@ -400,7 +400,7 @@ async def write_file_chunk(
         except AttributeError:
             # Python < 3.9 fallback
             if not str(resolved_path).startswith(str(project_root)):
-                raise ValueError(f"File path must be within project root: {file_path}")
+                raise ValueError(f"File path must be within project root: {file_path}") from None
 
         # Validate chunk parameters
         if chunk_index < 0:

@@ -2,63 +2,13 @@
 
 import asyncio
 import json
-from pathlib import Path
 from typing import Any
 
 import logfire
 
 from ..config import settings
 from .path_utils import resolve_file_path
-
-# Maximum output size (10MB)
-MAX_OUTPUT_SIZE = 10 * 1024 * 1024
-
-# Timeout for static analysis tools (5 minutes)
-STATIC_ANALYSIS_TIMEOUT = 300.0
-
-
-async def _run_tool_command(
-    cmd: list[str], cwd: Path | None = None, timeout: float = STATIC_ANALYSIS_TIMEOUT
-) -> tuple[str, str, int]:
-    """
-    Run a static analysis tool command.
-
-    Args:
-        cmd: Command as list of strings
-        cwd: Working directory
-        timeout: Command timeout
-
-    Returns:
-        Tuple of (stdout, stderr, return_code)
-    """
-    if cwd is None:
-        cwd = settings.project_root.resolve()
-
-    try:
-        proc = await asyncio.create_subprocess_exec(
-            *cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            cwd=str(cwd),
-        )
-
-        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
-
-        stdout_text = stdout.decode("utf-8", errors="replace")
-        stderr_text = stderr.decode("utf-8", errors="replace")
-
-        # Check output size
-        if len(stdout_text) > MAX_OUTPUT_SIZE:
-            logfire.warning("Tool output too large, truncating", size=len(stdout_text))
-            stdout_text = stdout_text[:MAX_OUTPUT_SIZE]
-
-        return stdout_text, stderr_text, proc.returncode
-
-    except TimeoutError as e:
-        raise TimeoutError(f"Static analysis command timed out after {timeout} seconds") from e
-    except Exception as e:
-        logfire.error("Static analysis command failed", cmd=cmd, error=str(e))
-        raise
+from .utils import run_command_safely
 
 
 async def run_static_analysis(file_path: str, base_path: str | None = None) -> dict[str, Any]:
@@ -70,6 +20,7 @@ async def run_static_analysis(file_path: str, base_path: str | None = None) -> d
 
     Args:
         file_path: Path to the file to analyze
+        base_path: Optional base path to resolve relative paths from
 
     Returns:
         Dictionary with analysis results from each tool:
@@ -79,13 +30,21 @@ async def run_static_analysis(file_path: str, base_path: str | None = None) -> d
         - available_tools: List of tools that were available
 
     Raises:
-        ValueError: If path is invalid
+        ValueError: If path is invalid or empty
         FileNotFoundError: If file doesn't exist
+        TypeError: If file_path is not a string
     """
+    # Input validation
+    if not isinstance(file_path, str):
+        raise TypeError("file_path must be a string")
+
+    if not file_path or not file_path.strip():
+        raise ValueError("file_path cannot be empty or None")
+
     logfire.info("Running static analysis", file_path=file_path, base_path=base_path)
 
     try:
-        resolved_path = resolve_file_path(file_path)
+        resolved_path = resolve_file_path(file_path, base_path)
 
         if not resolved_path.exists():
             raise FileNotFoundError(f"File not found: {file_path}")
@@ -95,9 +54,9 @@ async def run_static_analysis(file_path: str, base_path: str | None = None) -> d
 
         project_root = settings.project_root.resolve()
         results: dict[str, Any] = {
-            "ruff": None,
-            "mypy": None,
-            "pylint": None,
+            settings.ruff_tool_name: None,
+            settings.mypy_tool_name: None,
+            settings.pylint_tool_name: None,
             "available_tools": [],
         }
 
@@ -108,121 +67,130 @@ async def run_static_analysis(file_path: str, base_path: str | None = None) -> d
             # Helper functions to run each tool
             async def run_ruff() -> tuple[str, dict[str, Any] | None]:
                 """Run Ruff analysis."""
+                tool_name = settings.ruff_tool_name
                 try:
                     # Check if ruff is available
-                    check_proc = await asyncio.create_subprocess_exec(
-                        "ruff",
-                        "--version",
-                        stdout=asyncio.subprocess.PIPE,
-                        stderr=asyncio.subprocess.PIPE,
-                    )
-                    await check_proc.wait()
-                    if check_proc.returncode != 0:
-                        return "ruff", None
+                    try:
+                        await run_command_safely(
+                            [tool_name, "--version"],
+                            cwd=project_root,
+                            timeout=settings.tool_check_timeout,
+                            check=False,
+                        )
+                    except (RuntimeError, TimeoutError):
+                        return tool_name, None
 
                     # Run ruff
-                    stdout, stderr, return_code = await _run_tool_command(
-                        ["ruff", "check", "--output-format", "json", str(resolved_path)],
+                    stdout, stderr, return_code = await run_command_safely(
+                        [tool_name, "check", "--output-format", "json", str(resolved_path)],
                         cwd=project_root,
-                        timeout=60.0,
+                        timeout=60.0,  # Ruff-specific timeout
+                        max_output_size=settings.max_output_size,
+                        check=False,
                     )
                     # Parse JSON output
                     try:
                         ruff_results = json.loads(stdout) if stdout.strip() else []
-                        return "ruff", {
+                        return tool_name, {
                             "issues": ruff_results,
                             "return_code": return_code,
                             "stderr": stderr,
                         }
                     except json.JSONDecodeError:
                         # Fallback to text output
-                        return "ruff", {
+                        return tool_name, {
                             "output": stdout,
                             "stderr": stderr,
                             "return_code": return_code,
                         }
-                except Exception as e:
+                except (TimeoutError, RuntimeError, OSError) as e:
                     logfire.warning("Ruff analysis failed", error=str(e))
-                    return "ruff", {"error": str(e)}
+                    return tool_name, {"error": str(e)}
 
             async def run_mypy() -> tuple[str, dict[str, Any] | None]:
                 """Run MyPy analysis."""
+                tool_name = settings.mypy_tool_name
                 try:
                     # Check if mypy is available
-                    check_proc = await asyncio.create_subprocess_exec(
-                        "mypy",
-                        "--version",
-                        stdout=asyncio.subprocess.PIPE,
-                        stderr=asyncio.subprocess.PIPE,
-                    )
-                    await check_proc.wait()
-                    if check_proc.returncode != 0:
-                        return "mypy", None
+                    try:
+                        await run_command_safely(
+                            [tool_name, "--version"],
+                            cwd=project_root,
+                            timeout=settings.tool_check_timeout,
+                            check=False,
+                        )
+                    except (RuntimeError, TimeoutError):
+                        return tool_name, None
 
                     # Run mypy
-                    stdout, stderr, return_code = await _run_tool_command(
+                    stdout, stderr, return_code = await run_command_safely(
                         [
-                            "mypy",
+                            tool_name,
                             "--no-error-summary",
                             "--show-error-codes",
                             str(resolved_path),
                         ],
                         cwd=project_root,
-                        timeout=120.0,
+                        timeout=120.0,  # MyPy-specific timeout
+                        max_output_size=settings.max_output_size,
+                        check=False,
                     )
-                    return "mypy", {
+                    return tool_name, {
                         "output": stdout,
                         "stderr": stderr,
                         "return_code": return_code,
                     }
-                except Exception as e:
+                except (TimeoutError, RuntimeError, OSError) as e:
                     logfire.warning("MyPy analysis failed", error=str(e))
-                    return "mypy", {"error": str(e)}
+                    return tool_name, {"error": str(e)}
 
             async def run_pylint() -> tuple[str, dict[str, Any] | None]:
                 """Run Pylint analysis."""
+                tool_name = settings.pylint_tool_name
                 try:
                     # Check if pylint is available
-                    check_proc = await asyncio.create_subprocess_exec(
-                        "pylint",
-                        "--version",
-                        stdout=asyncio.subprocess.PIPE,
-                        stderr=asyncio.subprocess.PIPE,
-                    )
-                    await check_proc.wait()
-                    if check_proc.returncode != 0:
-                        return "pylint", None
+                    try:
+                        await run_command_safely(
+                            [tool_name, "--version"],
+                            cwd=project_root,
+                            timeout=settings.tool_check_timeout,
+                            check=False,
+                        )
+                    except (RuntimeError, TimeoutError):
+                        return tool_name, None
 
                     # Run pylint
-                    stdout, stderr, return_code = await _run_tool_command(
+                    stdout, stderr, return_code = await run_command_safely(
                         [
-                            "pylint",
+                            tool_name,
                             "--output-format=json",
                             "--disable=all",
                             "--enable=C,R,W",
                             str(resolved_path),
                         ],
                         cwd=project_root,
-                        timeout=120.0,
+                        timeout=120.0,  # Pylint-specific timeout
+                        max_output_size=settings.max_output_size,
+                        check=False,
                     )
                     # Parse JSON output
                     try:
                         pylint_results = json.loads(stdout) if stdout.strip() else []
-                        return "pylint", {
+                        return tool_name, {
                             "issues": pylint_results,
                             "return_code": return_code,
                             "stderr": stderr,
                         }
                     except json.JSONDecodeError:
                         # Fallback to text output
-                        return "pylint", {
+                        return tool_name, {
                             "output": stdout,
                             "stderr": stderr,
                             "return_code": return_code,
                         }
-                except Exception as e:
+                except (TimeoutError, RuntimeError, OSError) as e:
                     logfire.warning("Pylint analysis failed", error=str(e))
-                    return "pylint", {"error": str(e)}
+                    return tool_name, {"error": str(e)}
 
             # Run all tools in parallel
             tool_results = await asyncio.gather(
@@ -238,7 +206,9 @@ async def run_static_analysis(file_path: str, base_path: str | None = None) -> d
                 tool_name, tool_data = result
                 if tool_data is not None:
                     results["available_tools"].append(tool_name)
-                    results[tool_name] = tool_data
+                    # Use the tool name as key (already set in results dict)
+                    if tool_name in results:
+                        results[tool_name] = tool_data
 
         logfire.info(
             "Static analysis completed",
@@ -247,6 +217,11 @@ async def run_static_analysis(file_path: str, base_path: str | None = None) -> d
         )
         return results
 
-    except Exception as e:
+    except (ValueError, TypeError, FileNotFoundError) as e:
+        # Re-raise specific exceptions as-is
         logfire.error("Static analysis failed", file_path=file_path, error=str(e))
         raise
+    except Exception as e:
+        # Catch-all for unexpected errors
+        logfire.error("Static analysis failed unexpectedly", file_path=file_path, error=str(e))
+        raise RuntimeError(f"Static analysis failed: {str(e)}") from e

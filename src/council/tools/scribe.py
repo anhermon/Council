@@ -1,6 +1,7 @@
 """Knowledge acquisition using Jina Reader."""
 
 import asyncio
+import contextlib
 import ipaddress
 import re
 import time
@@ -84,17 +85,16 @@ def validate_url(url: str) -> None:
         raise ValueError(f"Access to internal domain {hostname} is not allowed")
 
     # Try to resolve hostname to IP and check if it's a private IP
-    try:
+    ip = None
+    with contextlib.suppress(ValueError):
         # Check if hostname is already an IP address
         ip = ipaddress.ip_address(hostname)
+
+    if ip:
         # Check if it's in any private range
         for private_range in PRIVATE_IP_RANGES:
             if ip in private_range:
                 raise ValueError(f"Access to private IP {hostname} is not allowed")
-    except ValueError:
-        # Not an IP address, try to resolve (but we'll do this check in the actual request)
-        # For now, we'll rely on DNS resolution blocking private IPs
-        pass
 
     # Additional validation: check for suspicious patterns
     if re.search(r"[@#]", url):

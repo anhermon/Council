@@ -23,7 +23,7 @@ class ComplexityVisitor(ast.NodeVisitor):
         """Visit function definition and calculate complexity."""
         complexity = 1  # Base complexity for function
         for child in ast.walk(node):
-            if isinstance(child, (ast.If, ast.While, ast.For, ast.AsyncFor, ast.ExceptHandler)):
+            if isinstance(child, ast.If | ast.While | ast.For | ast.AsyncFor | ast.ExceptHandler):
                 complexity += 1
             elif isinstance(child, ast.BoolOp):
                 complexity += len(child.values) - 1

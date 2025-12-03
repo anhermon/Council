@@ -1,6 +1,5 @@
 """Git integration tools for incremental reviews and change analysis."""
 
-import asyncio
 from pathlib import Path
 from typing import Any
 
@@ -8,16 +7,14 @@ import logfire
 
 from ..config import settings
 from .path_utils import resolve_file_path
-
-# Maximum git output size (10MB)
-MAX_GIT_OUTPUT_SIZE = 10 * 1024 * 1024
+from .utils import run_command_safely
 
 # Maximum number of history entries
 MAX_HISTORY_LIMIT = 100
 
 
 async def _run_git_command(
-    cmd: list[str], cwd: Path | None = None, timeout: float = 30.0
+    cmd: list[str], cwd: Path | None = None, timeout: float | None = None
 ) -> tuple[str, str]:
     """
     Run a git command and return stdout/stderr.
@@ -33,38 +30,19 @@ async def _run_git_command(
     Raises:
         RuntimeError: If git command fails
         TimeoutError: If command times out
+        ValueError: If output exceeds maximum size
     """
-    if cwd is None:
-        cwd = settings.project_root.resolve()
+    if timeout is None:
+        timeout = settings.git_timeout
 
-    try:
-        proc = await asyncio.create_subprocess_exec(
-            *cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            cwd=str(cwd),
-        )
-
-        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
-
-        if proc.returncode != 0:
-            error_msg = stderr.decode("utf-8", errors="replace")
-            raise RuntimeError(f"Git command failed: {error_msg}")
-
-        stdout_text = stdout.decode("utf-8", errors="replace")
-        stderr_text = stderr.decode("utf-8", errors="replace")
-
-        # Check output size
-        if len(stdout_text) > MAX_GIT_OUTPUT_SIZE:
-            raise ValueError(f"Git output too large: {len(stdout_text)} bytes")
-
-        return stdout_text, stderr_text
-
-    except TimeoutError as e:
-        raise TimeoutError(f"Git command timed out after {timeout} seconds") from e
-    except Exception as e:
-        logfire.error("Git command execution failed", cmd=cmd, error=str(e))
-        raise
+    stdout_text, stderr_text, return_code = await run_command_safely(
+        cmd,
+        cwd=cwd,
+        timeout=timeout,
+        max_output_size=settings.max_output_size,
+        check=True,
+    )
+    return stdout_text, stderr_text
 
 
 async def get_git_diff(file_path: str, base_ref: str = "HEAD", base_path: str | None = None) -> str:
@@ -121,7 +99,7 @@ async def get_git_diff(file_path: str, base_ref: str = "HEAD", base_path: str | 
             diff_output, _ = await _run_git_command(
                 ["git", "diff", base_ref, "--", rel_path],
                 cwd=project_root,
-                timeout=60.0,
+                timeout=settings.test_timeout,  # Use test_timeout for git diff operations
             )
         except RuntimeError as e:
             # No changes or error
@@ -135,9 +113,14 @@ async def get_git_diff(file_path: str, base_ref: str = "HEAD", base_path: str | 
         logfire.info("Git diff retrieved", file_path=file_path, size=len(diff_output))
         return diff_output
 
-    except Exception as e:
+    except (ValueError, FileNotFoundError, RuntimeError, TimeoutError) as e:
+        # Re-raise specific exceptions as-is
         logfire.error("Failed to get git diff", file_path=file_path, error=str(e))
         raise
+    except Exception as e:
+        # Catch-all for unexpected errors
+        logfire.error("Failed to get git diff unexpectedly", file_path=file_path, error=str(e))
+        raise RuntimeError(f"Failed to get git diff: {str(e)}") from e
 
 
 async def get_uncommitted_files() -> list[str]:
@@ -203,9 +186,14 @@ async def get_uncommitted_files() -> list[str]:
         logfire.info("Uncommitted files retrieved", count=len(result))
         return result
 
-    except Exception as e:
+    except (RuntimeError, TimeoutError) as e:
+        # Re-raise specific exceptions as-is
         logfire.error("Failed to get uncommitted files", error=str(e))
         raise
+    except Exception as e:
+        # Catch-all for unexpected errors
+        logfire.error("Failed to get uncommitted files unexpectedly", error=str(e))
+        raise RuntimeError(f"Failed to get uncommitted files: {str(e)}") from e
 
 
 async def get_file_history(
@@ -329,6 +317,11 @@ async def get_file_history(
         logfire.info("File history retrieved", file_path=file_path, entries=len(history))
         return history
 
-    except Exception as e:
+    except (ValueError, FileNotFoundError, RuntimeError, TimeoutError) as e:
+        # Re-raise specific exceptions as-is
         logfire.error("Failed to get file history", file_path=file_path, error=str(e))
         raise
+    except Exception as e:
+        # Catch-all for unexpected errors
+        logfire.error("Failed to get file history unexpectedly", file_path=file_path, error=str(e))
+        raise RuntimeError(f"Failed to get file history: {str(e)}") from e

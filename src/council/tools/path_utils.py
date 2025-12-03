@@ -57,6 +57,121 @@ def _is_safe_path(path: Path, allowed_roots: set[Path]) -> bool:
         return False
 
 
+def _validate_and_resolve_candidate(candidate: Path, allowed_roots: set[Path]) -> Path | None:
+    """
+    Validate and resolve a candidate path.
+
+    Args:
+        candidate: Path candidate to validate
+        allowed_roots: Set of allowed root directories
+
+    Returns:
+        Resolved Path if valid and exists, None otherwise
+    """
+    try:
+        if _is_safe_path(candidate, allowed_roots) and candidate.exists():
+            return candidate.resolve()
+    except (OSError, ValueError) as e:
+        logger.debug(f"Candidate validation failed: {e}")
+    return None
+
+
+def _try_resolve_relative(
+    file_path: str, base_path: str | None, allowed_roots: set[Path]
+) -> list[Path]:
+    """
+    Try to resolve file_path relative to various base directories.
+
+    Tries in order:
+    1. base_path (if provided)
+    2. Project root
+    3. Current working directory
+
+    Args:
+        file_path: Path to resolve
+        base_path: Optional base path to resolve relative to
+        allowed_roots: Set of allowed root directories
+
+    Returns:
+        List of valid resolved paths (in order of preference)
+    """
+    candidates = []
+
+    # Strategy 1: If base_path provided, resolve relative to it
+    if base_path:
+        try:
+            base = Path(base_path).resolve()
+            if base.is_file():
+                base = base.parent
+            candidate = base / file_path
+            resolved = _validate_and_resolve_candidate(candidate, allowed_roots)
+            if resolved:
+                candidates.append(resolved)
+        except (OSError, ValueError) as e:
+            logger.debug(f"Base path resolution failed: {e}")
+
+    # Strategy 2: Try relative to project root
+    try:
+        candidate = settings.project_root / file_path
+        resolved = _validate_and_resolve_candidate(candidate, allowed_roots)
+        if resolved:
+            candidates.append(resolved)
+    except (OSError, ValueError) as e:
+        logger.debug(f"Project root resolution failed: {e}")
+
+    # Strategy 3: Try relative to current working directory
+    try:
+        candidate = Path.cwd() / file_path
+        resolved = _validate_and_resolve_candidate(candidate, allowed_roots)
+        if resolved:
+            candidates.append(resolved)
+    except (OSError, ValueError) as e:
+        logger.debug(f"CWD resolution failed: {e}")
+
+    return candidates
+
+
+def _search_project_recursive(file_path: str, allowed_roots: set[Path]) -> Path | None:
+    """
+    Search for a filename recursively in the project root.
+
+    Only searches if file_path is just a filename (no path separators).
+
+    Args:
+        file_path: Filename to search for
+        allowed_roots: Set of allowed root directories
+
+    Returns:
+        First valid match found (closest to root), or None if not found
+    """
+    # Only search for filenames (no path separators)
+    if os.sep in file_path or (os.altsep and os.altsep in file_path):
+        return None
+
+    try:
+        # Search depth by depth until we find matches, then exit immediately
+        for depth in range(MAX_SEARCH_DEPTH):
+            pattern = "/".join(["*"] * depth + [file_path])
+            current_matches = list(settings.project_root.glob(pattern))
+            if current_matches:
+                # Filter safe matches and sort by proximity to root
+                safe_matches = [
+                    match.resolve()
+                    for match in current_matches
+                    if _is_safe_path(match, allowed_roots)
+                ]
+                if safe_matches:
+                    safe_matches.sort(key=lambda p: len(p.parts))
+                    # Return the closest match to root
+                    return safe_matches[0]
+                # Exit immediately after checking matches
+                break
+    except (OSError, ValueError) as e:
+        logger.debug(f"Recursive search failed: {e}")
+
+    return None
+
+
 def resolve_file_path(file_path: str, base_path: str | None = None) -> Path:
     """
     Resolve file path intelligently, handling relative paths and filenames.
@@ -100,61 +215,14 @@ def resolve_file_path(file_path: str, base_path: str | None = None) -> Path:
         return path_obj.resolve()
 
     # Try multiple resolution strategies
-    candidates = []
+    # Strategy 1-3: Try relative paths
+    candidates = _try_resolve_relative(file_path, base_path, allowed_roots)
 
-    # Strategy 1: If base_path provided, resolve relative to it
-    if base_path:
-        try:
-            base = Path(base_path).resolve()
-            if base.is_file():
-                base = base.parent
-            candidate = base / file_path
-            if _is_safe_path(candidate, allowed_roots) and candidate.exists():
-                candidates.append(candidate.resolve())
-        except (OSError, ValueError) as e:
-            logger.debug(f"Base path resolution failed: {e}")
-
-    # Strategy 2: Try relative to project root
-    try:
-        candidate = settings.project_root / file_path
-        if _is_safe_path(candidate, allowed_roots) and candidate.exists():
-            candidates.append(candidate.resolve())
-    except (OSError, ValueError) as e:
-        logger.debug(f"Project root resolution failed: {e}")
-
-    # Strategy 3: Try relative to current working directory
-    try:
-        candidate = Path.cwd() / file_path
-        if _is_safe_path(candidate, allowed_roots) and candidate.exists():
-            candidates.append(candidate.resolve())
-    except (OSError, ValueError) as e:
-        logger.debug(f"CWD resolution failed: {e}")
-
-    # Strategy 4: Search in project root recursively (for just filename)
-    if (
-        not candidates
-        and os.sep not in file_path
-        and (os.altsep is None or os.altsep not in file_path)
-    ):
-        try:
-            # Limit search to reasonable depth to prevent performance issues
-            matches = []
-            for depth in range(MAX_SEARCH_DEPTH):
-                pattern = "/".join(["*"] * depth + [file_path])
-                current_matches = list(settings.project_root.glob(pattern))
-                if current_matches:
-                    matches.extend(current_matches)
-                    break
-
-            # Filter safe matches and sort by proximity to root
-            safe_matches = [
-                match.resolve() for match in matches if _is_safe_path(match, allowed_roots)
-            ]
-            if safe_matches:
-                safe_matches.sort(key=lambda p: len(p.parts))
-                candidates.append(safe_matches[0])
-        except (OSError, ValueError) as e:
-            logger.debug(f"Recursive search failed: {e}")
+    # Strategy 4: Search recursively (only if no candidates found and it's just a filename)
+    if not candidates:
+        recursive_match = _search_project_recursive(file_path, allowed_roots)
+        if recursive_match:
+            candidates.append(recursive_match)
 
     # Return the best candidate if found
     if candidates:

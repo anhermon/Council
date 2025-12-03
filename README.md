@@ -120,7 +120,7 @@ uv run council housekeeping
 
 This command runs a structured 4-phase protocol:
 - **Phase 1**: Hygiene & Safety (gitignore audit, cleanup, dead code removal)
-- **Phase 2**: Standardization & Quality (linting, formatting, DRY analysis)  
+- **Phase 2**: Standardization & Quality (linting, formatting, DRY analysis)
 - **Phase 3**: Documentation Alignment (docstring audit, README updates)
 - **Phase 4**: Mental Map (project context documentation)
 
