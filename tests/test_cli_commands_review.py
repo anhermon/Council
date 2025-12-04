@@ -4,7 +4,8 @@ from unittest.mock import patch
 
 from click.testing import CliRunner
 
-from council.cli.commands.review import MAX_EXTRA_INSTRUCTIONS_LENGTH, review
+from council.cli.commands.review import review
+from council.cli.utils.constants import MAX_EXTRA_INSTRUCTIONS_LENGTH
 
 
 class TestReviewCommand:

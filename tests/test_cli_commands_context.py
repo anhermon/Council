@@ -6,11 +6,11 @@ from unittest.mock import patch
 from click.testing import CliRunner
 
 from council.cli.commands.context import (
-    MAX_EXTRA_INSTRUCTIONS_LENGTH,
     _output_json,
     _output_markdown,
     context,
 )
+from council.cli.utils.constants import MAX_EXTRA_INSTRUCTIONS_LENGTH
 
 
 class TestContextCommand:

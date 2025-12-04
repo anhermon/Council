@@ -60,7 +60,7 @@ async def _build_system_prompt(
     deps: CouncilDeps,
     domain_rules: str,
     language: str,
-    _loaded_filenames: set[str],  # Unused but kept for API consistency
+    _loaded_filenames: set[str],  # noqa: ARG001  # Unused but kept for API consistency
 ) -> str:
     """Build system prompt using template logic."""
     from ...agents.councilor import _get_jinja_env, _validate_extra_instructions

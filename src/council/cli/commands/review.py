@@ -23,12 +23,11 @@ from ...tools.repomix import get_packed_context, get_packed_diff
 from ..core.review_executor import run_agent_review
 from ..ui.output import print_markdown, print_pretty
 from ..ui.spinner import Spinner
+from ..utils.constants import VALID_REVIEW_PHASES
 from ..utils.paths import collect_files
+from ..utils.validation import sanitize_extra_instructions
 
 settings = get_settings()
-
-# Configuration constants
-MAX_EXTRA_INSTRUCTIONS_LENGTH = 10000
 
 
 @click.command()
@@ -92,25 +91,7 @@ def review(
     """
     # Validate and sanitize extra_instructions
     if extra_instructions:
-        # Check length to prevent API limit issues
-        if len(extra_instructions) > MAX_EXTRA_INSTRUCTIONS_LENGTH:
-            click.echo(
-                f"❌ Extra instructions too long (max {MAX_EXTRA_INSTRUCTIONS_LENGTH} characters)",
-                err=True,
-            )
-            sys.exit(1)
-
-        # Basic sanitization: remove null bytes and control characters that could cause issues
-        # Keep newlines and tabs as they might be intentional
-        sanitized = "".join(
-            char for char in extra_instructions if ord(char) >= 32 or char in "\n\t"
-        )
-        if sanitized != extra_instructions:
-            click.echo(
-                "⚠️  Warning: Removed invalid control characters from extra instructions",
-                err=True,
-            )
-        extra_instructions = sanitized
+        extra_instructions = sanitize_extra_instructions(extra_instructions)
 
     # Handle --uncommitted without paths: use project root
     if uncommitted and (not paths or len(paths) == 0):
@@ -238,11 +219,10 @@ def review(
                 review_phases = None
                 if phases:
                     review_phases = [p.strip() for p in phases.split(",") if p.strip()]
-                    valid_phases = {"security", "performance", "maintainability", "best_practices"}
-                    review_phases = [p for p in review_phases if p in valid_phases]
+                    review_phases = [p for p in review_phases if p in VALID_REVIEW_PHASES]
                     if not review_phases:
                         click.echo(
-                            f"⚠️  No valid phases specified, using all phases. Valid phases: {', '.join(valid_phases)}",
+                            f"⚠️  No valid phases specified, using all phases. Valid phases: {', '.join(sorted(VALID_REVIEW_PHASES))}",
                             err=True,
                         )
                         review_phases = None

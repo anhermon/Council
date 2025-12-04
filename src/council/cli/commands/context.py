@@ -4,7 +4,7 @@ import asyncio
 import json
 import logging
 import sys
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 
 import click
@@ -13,12 +13,14 @@ import logfire
 from ...agents import CouncilDeps
 from ...tools.repomix import get_packed_context, get_packed_diff
 from ..core.context_builder import build_review_context
+from ..utils.constants import (
+    MAX_OUTPUT_SIZE_WARNING_BYTES,
+    OUTPUT_FORMAT_JSON,
+    OUTPUT_FORMAT_MARKDOWN,
+    VALID_REVIEW_PHASES,
+)
 from ..utils.paths import resolve_path
-
-# Configuration constants
-MAX_EXTRA_INSTRUCTIONS_LENGTH = 10000
-OUTPUT_FORMAT_JSON = "json"
-OUTPUT_FORMAT_MARKDOWN = "markdown"
+from ..utils.validation import sanitize_extra_instructions
 
 
 @click.command()
@@ -66,23 +68,7 @@ def context(
     """
     # Validate and sanitize extra_instructions
     if extra_instructions:
-        if len(extra_instructions) > MAX_EXTRA_INSTRUCTIONS_LENGTH:
-            click.echo(
-                f"❌ Extra instructions too long (max {MAX_EXTRA_INSTRUCTIONS_LENGTH} characters)",
-                err=True,
-            )
-            sys.exit(1)
-
-        # Basic sanitization
-        sanitized = "".join(
-            char for char in extra_instructions if ord(char) >= 32 or char in "\n\t"
-        )
-        if sanitized != extra_instructions:
-            click.echo(
-                "⚠️  Warning: Removed invalid control characters from extra instructions",
-                err=True,
-            )
-        extra_instructions = sanitized
+        extra_instructions = sanitize_extra_instructions(extra_instructions)
 
     # Validate file path
     try:
@@ -99,11 +85,10 @@ def context(
     review_phases = None
     if phases:
         review_phases = [p.strip() for p in phases.split(",") if p.strip()]
-        valid_phases = {"security", "performance", "maintainability", "best_practices"}
-        review_phases = [p for p in review_phases if p in valid_phases]
+        review_phases = [p for p in review_phases if p in VALID_REVIEW_PHASES]
         if not review_phases:
             click.echo(
-                f"⚠️  No valid phases specified. Valid phases: {', '.join(valid_phases)}",
+                f"⚠️  No valid phases specified. Valid phases: {', '.join(sorted(VALID_REVIEW_PHASES))}",
                 err=True,
             )
             review_phases = None
@@ -166,7 +151,7 @@ def _output_markdown(context_data: dict) -> None:
     """Output context as Markdown."""
     # Calculate approximate output size for warning
     output_size = len(str(context_data))
-    if output_size > 100 * 1024:  # 100KB
+    if output_size > MAX_OUTPUT_SIZE_WARNING_BYTES:
         click.echo(
             f"⚠️  Warning: Large context file ({output_size / 1024:.1f}KB). "
             "Consider using --phases to focus on specific review areas.\n",
@@ -174,7 +159,8 @@ def _output_markdown(context_data: dict) -> None:
         )
 
     # Generate timestamp
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S UTC")
+
+    timestamp = datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S UTC")
 
     click.echo("# Code Review Context\n")
     click.echo(f"**Generated:** {timestamp}\n")

@@ -47,7 +47,29 @@ def resolve_path(path: Path) -> Path:
             # Fall back to treating @folder as just folder
             resolved = base_path / folder_name if folder_name else base_path
 
-        resolved_path = resolved.resolve() if resolved.exists() else path.resolve()
+        if resolved.exists():
+            resolved_path = resolved.resolve()
+        else:
+            # Fallback to original path, but validate it before returning
+            fallback_path = path.resolve()
+            # Validate fallback path is within allowed directories
+            allowed_roots = [base_path.resolve(), (base_path / "src").resolve()]
+            for root in allowed_roots:
+                try:
+                    if hasattr(fallback_path, "is_relative_to"):
+                        if fallback_path.is_relative_to(root):
+                            resolved_path = fallback_path
+                            break
+                    else:
+                        # Python < 3.9 fallback
+                        fallback_path.relative_to(root)
+                        resolved_path = fallback_path
+                        break
+                except (ValueError, AttributeError):
+                    continue
+            else:
+                # If we didn't break, the fallback path is invalid
+                raise ValueError("Resolved path would be outside allowed directories")
 
         # Ensure resolved path is within allowed directories
         allowed_roots = [base_path.resolve(), (base_path / "src").resolve()]
