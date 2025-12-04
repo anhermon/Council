@@ -59,6 +59,7 @@ async def _execute_repomix(
     target_dir: Path,
     output_path: Path,
     include_pattern: str | None = None,
+    additional_patterns: list[str] | None = None,
 ) -> str:
     """
     Execute Repomix command and return XML content.
@@ -67,6 +68,7 @@ async def _execute_repomix(
         target_dir: Directory to analyze
         output_path: Path to output file
         include_pattern: Optional file pattern to include
+        additional_patterns: Optional list of additional file patterns to include
 
     Returns:
         XML content from Repomix
@@ -86,11 +88,23 @@ async def _execute_repomix(
         "--no-security-check",  # Disable security checks to avoid false positives
     ]
 
-    # If targeting a specific file, include only that file
+    # IMPORTANT: Repomix only uses the LAST --include pattern
+    # So we must ensure the main file pattern comes LAST
+
+    # Add SQL file patterns first (they'll be ignored, but we parse them separately)
+    if additional_patterns:
+        for pattern in additional_patterns:
+            validated_pattern = validate_include_pattern(pattern)
+            cmd.extend(["--include", validated_pattern])
+        logfire.debug(
+            "Added SQL file patterns (will be parsed separately)", count=len(additional_patterns)
+        )
+
+    # Add main file pattern LAST (this is what Repomix will actually use)
     if include_pattern:
-        # Validate include_pattern to prevent command injection
         validated_pattern = validate_include_pattern(include_pattern)
         cmd.extend(["--include", validated_pattern])
+        logfire.debug("Main file pattern (last, will be used by Repomix)", pattern=include_pattern)
 
     logfire.debug("Running repomix", command=" ".join(cmd))
 
@@ -200,9 +214,58 @@ async def get_packed_context(file_path: str) -> str:
     if resolved_path.is_file():
         target_dir = resolved_path.parent
         include_pattern = resolved_path.name
+
+        # Discover SQL files related to this code file
+        from ..config import get_settings
+        from .db_file_discovery import discover_sql_files
+
+        settings_instance = get_settings()
+        sql_files = discover_sql_files(resolved_path, settings_instance.project_root)
+
+        # Convert SQL file paths to relative patterns for Repomix
+        # Use project root as base for Repomix to ensure we can find files in sibling directories
+        additional_patterns: list[str] = []
+        for sql_file in sql_files:
+            try:
+                # Try relative to project root first (most reliable)
+                rel_path = sql_file.relative_to(settings_instance.project_root)
+                additional_patterns.append(str(rel_path))
+            except ValueError:
+                # If not relative to project root, try relative to target_dir
+                try:
+                    rel_path = sql_file.relative_to(target_dir)
+                    additional_patterns.append(str(rel_path))
+                except ValueError:
+                    # Skip if we can't make it relative
+                    logfire.warning(
+                        "Could not make SQL file relative for Repomix",
+                        sql_file=str(sql_file),
+                        target_dir=str(target_dir),
+                        project_root=str(settings_instance.project_root),
+                    )
+
+        # If we found SQL files, we need to run Repomix from project root
+        # to be able to include files from different directories
+        if additional_patterns:
+            # Switch to project root and make include_pattern relative to it
+            original_target_dir = target_dir
+            target_dir = settings_instance.project_root
+            try:
+                include_pattern = str(resolved_path.relative_to(settings_instance.project_root))
+            except ValueError:
+                # If not relative, try to construct relative path
+                # Fallback: use original pattern and hope it works
+                logfire.warning(
+                    "Could not make file path relative to project root",
+                    file_path=str(resolved_path),
+                    project_root=str(settings_instance.project_root),
+                )
+                # Keep original target_dir and pattern
+                target_dir = original_target_dir
     else:
         target_dir = resolved_path
         include_pattern = None
+        additional_patterns = None
 
     # Create a temporary file for output
     output_path = None
@@ -210,7 +273,9 @@ async def get_packed_context(file_path: str) -> str:
         output_path = Path(tmp_file.name)
 
     try:
-        content = await _execute_repomix(target_dir, output_path, include_pattern)
+        content = await _execute_repomix(
+            target_dir, output_path, include_pattern, additional_patterns
+        )
 
         # Cache the result (thread-safe)
         with _cache_lock:

@@ -74,3 +74,6 @@ repomix_*.xml
 .ruff_cache/
 node_modules/
 .next/
+
+# Mock project for testing (do not commit)
+mock_project/

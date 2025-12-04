@@ -198,5 +198,73 @@ def _output_markdown(context_data: dict) -> None:
     click.echo(context_data["extracted_code"])
     click.echo("\n```\n")
 
+    # Display database relations if available
+    database_relations = context_data.get("database_relations", {})
+    if database_relations:
+        click.echo("## Database Relations\n")
+
+        # Tables referenced
+        tables_referenced = database_relations.get("tables_referenced", [])
+        if tables_referenced:
+            click.echo(f"**Tables Referenced:** {', '.join(tables_referenced)}\n")
+
+        # Queries in code
+        queries_in_code = database_relations.get("queries_in_code", [])
+        if queries_in_code:
+            click.echo("\n### Queries in Code\n")
+            for query_info in queries_in_code:
+                method = query_info.get("method", "Unknown")
+                tables = query_info.get("tables", [])
+                click.echo(f"- **Method:** `{method}`\n")
+                if tables:
+                    click.echo(f"  - **Tables:** {', '.join(tables)}\n")
+                query_preview = query_info.get("query", "")
+                if len(query_preview) > 100:
+                    query_preview = query_preview[:100] + "..."
+                click.echo(f"  - **Query:** `{query_preview}`\n")
+
+        # Schema tables
+        schema_tables = database_relations.get("schema_tables", {})
+        if schema_tables:
+            click.echo("\n### Schema Tables\n")
+            for table_name, table_info in schema_tables.items():
+                click.echo(f"- **{table_name}**\n")
+                columns = table_info.get("columns", [])
+                if columns:
+                    col_names = [col.get("name", "") for col in columns[:10]]  # Limit to first 10
+                    click.echo(f"  - Columns: {', '.join(col_names)}\n")
+                    if len(columns) > 10:
+                        click.echo(f"  - ... and {len(columns) - 10} more columns\n")
+                foreign_keys = table_info.get("foreign_keys", [])
+                if foreign_keys:
+                    click.echo(f"  - Foreign Keys: {len(foreign_keys)}\n")
+
+        # Relationships
+        relationships = database_relations.get("relationships", [])
+        if relationships:
+            click.echo("\n### Table Relationships\n")
+            for rel in relationships[:10]:  # Limit to first 10
+                from_table = rel.get("from_table", "")
+                to_table = rel.get("to_table", "")
+                fk = rel.get("foreign_key", "")
+                click.echo(f"- `{from_table}` → `{to_table}` (via `{fk}`)\n")
+            if len(relationships) > 10:
+                click.echo(f"- ... and {len(relationships) - 10} more relationships\n")
+
+        # Queries in files
+        queries_in_files = database_relations.get("queries_in_files", [])
+        if queries_in_files:
+            click.echo("\n### Queries in SQL Files\n")
+            for file_query in queries_in_files[:5]:  # Limit to first 5
+                file_path = file_query.get("file", "")
+                used = file_query.get("used_in_code", False)
+                methods = file_query.get("used_in_methods", [])
+                click.echo(f"- **File:** `{file_path}`\n")
+                click.echo(f"  - **Used in code:** {'Yes' if used else 'No'}\n")
+                if methods:
+                    click.echo(f"  - **Methods:** {', '.join(methods)}\n")
+            if len(queries_in_files) > 5:
+                click.echo(f"- ... and {len(queries_in_files) - 5} more queries\n")
+
     click.echo("## Review Checklist\n")
     click.echo(context_data["review_checklist"])

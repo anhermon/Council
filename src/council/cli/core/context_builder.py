@@ -1,8 +1,13 @@
 """Context builder for review context command."""
 
+from pathlib import Path
+from typing import Any
+
 from ...agents import CouncilDeps
 from ...agents.councilor import detect_language, get_relevant_knowledge
 from ...config import get_settings
+from ...tools.db_file_discovery import discover_sql_files
+from ...tools.db_relation_tracer import build_relation_map
 from ...tools.repomix import extract_code_from_xml
 
 settings = get_settings()
@@ -20,10 +25,53 @@ async def build_review_context(
         deps: Council dependencies
 
     Returns:
-        Dictionary containing extracted_code, system_prompt, knowledge_base, file_path, language, and review_checklist
+        Dictionary containing extracted_code, system_prompt, knowledge_base, file_path, language, review_checklist, and database_relations
     """
     # Extract code from XML
     extracted_code = extract_code_from_xml(packed_xml)
+
+    # If we have SQL files discovered, append their content to extracted_code
+    # (Repomix limitation: only last --include pattern is used, so SQL files
+    # may not be included in the XML)
+    try:
+        file_path_obj = Path(deps.file_path)
+        if file_path_obj.exists():
+            sql_files = discover_sql_files(file_path_obj, settings.project_root)
+            if sql_files:
+                # Check which files are already in extracted_code to avoid duplicates
+                existing_files = set()
+                for line in extracted_code.split("\n"):
+                    if line.startswith("=== File:"):
+                        file_name = line.replace("=== File:", "").strip().split("===")[0].strip()
+                        existing_files.add(file_name)
+
+                sql_content_sections = []
+                for sql_file in sql_files:
+                    try:
+                        rel_path = sql_file.relative_to(settings.project_root)
+                        rel_path_str = str(rel_path)
+
+                        # Skip if already in extracted_code
+                        if rel_path_str in existing_files:
+                            continue
+
+                        sql_content = sql_file.read_text(encoding="utf-8", errors="ignore")
+                        sql_content_sections.append(f"=== File: {rel_path_str} ===\n{sql_content}")
+                    except Exception as e:
+                        import logfire
+
+                        logfire.warning(
+                            "Failed to read SQL file for context", file=str(sql_file), error=str(e)
+                        )
+
+                if sql_content_sections:
+                    # Append SQL files to extracted code
+                    extracted_code += "\n\n" + "\n\n".join(sql_content_sections)
+    except Exception as e:
+        # Don't fail if SQL file appending fails
+        import logfire
+
+        logfire.debug("Could not append SQL files to extracted code", error=str(e))
 
     # Load relevant knowledge
     # Note: Knowledge base may be empty if:
@@ -34,6 +82,26 @@ async def build_review_context(
 
     # Detect language
     language = detect_language(deps.file_path)
+
+    # Build database relations if applicable
+    database_relations: dict[str, Any] = {}
+    try:
+        file_path_obj = Path(deps.file_path)
+        if file_path_obj.exists():
+            # Discover SQL files related to this code
+            sql_files = discover_sql_files(file_path_obj, settings.project_root)
+            if sql_files:
+                # Build relation map
+                database_relations = build_relation_map(extracted_code, sql_files)
+    except Exception as e:
+        # Log error but don't fail the entire context building
+        # Import logfire here to avoid circular imports
+        import logfire
+
+        logfire.warning(
+            "Failed to build database relations", error=str(e), file_path=deps.file_path
+        )
+        database_relations = {}
 
     # Build system prompt using template logic
     system_prompt = await _build_system_prompt(deps, knowledge_base, language, loaded_filenames)
@@ -53,6 +121,7 @@ async def build_review_context(
             "loaded_knowledge_files": list(loaded_filenames),
         },
         "review_checklist": review_checklist,
+        "database_relations": database_relations,
     }
 
 
