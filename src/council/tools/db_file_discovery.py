@@ -105,37 +105,44 @@ def discover_sql_files(file_path: Path, project_root: Path) -> list[Path]:
 
     # Search in common database directories
     for dir_pattern in SQL_DIR_PATTERNS:
-        db_dir = search_root / dir_pattern
-        if db_dir.exists() and db_dir.is_dir():
-            # Look for SQL files in this directory
-            for sql_file in db_dir.glob("*.sql"):
-                if sql_file.is_file():
-                    discovered_files.append(sql_file)
-
-        # Also check parent directories (up to project root)
+        # Check search_root and all parent directories up to and including project_root
         current = search_root
-        while current != project_root and current != current.parent:
+        while True:
             db_dir = current / dir_pattern
             if db_dir.exists() and db_dir.is_dir():
+                # Look for SQL files in this directory
                 for sql_file in db_dir.glob("*.sql"):
                     if sql_file.is_file():
                         discovered_files.append(sql_file)
-            current = current.parent
+
+            # Stop if we've reached project_root
+            if current == project_root:
+                break
+
+            # Move to parent directory, but stop if we can't go further
+            parent = current.parent
+            if parent == current:  # Reached filesystem root
+                break
+            current = parent
 
     # Search for specific SQL file patterns in the same directory and parent directories
     for pattern in SQL_FILE_PATTERNS:
-        # Search in file's directory
-        for sql_file in search_root.glob(pattern):
-            if sql_file.is_file() and sql_file.suffix == ".sql":
-                discovered_files.append(sql_file)
-
-        # Search in parent directories up to project root
+        # Search in search_root and all parent directories up to and including project_root
         current = search_root
-        while current != project_root and current != current.parent:
+        while True:
             for sql_file in current.glob(pattern):
                 if sql_file.is_file() and sql_file.suffix == ".sql":
                     discovered_files.append(sql_file)
-            current = current.parent
+
+            # Stop if we've reached project_root
+            if current == project_root:
+                break
+
+            # Move to parent directory, but stop if we can't go further
+            parent = current.parent
+            if parent == current:  # Reached filesystem root
+                break
+            current = parent
 
     # Remove duplicates and sort
     discovered_files = sorted(set(discovered_files), key=lambda p: str(p))

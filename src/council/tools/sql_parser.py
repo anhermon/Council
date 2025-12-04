@@ -43,6 +43,27 @@ def parse_sql_query(query: str) -> dict[str, Any]:
             if col_name:
                 columns.add(col_name)
 
+        # Handle INSERT statements specifically to extract column names from column list
+        if isinstance(expression, exp.Insert) and expression.this:
+            # Extract table name
+            if isinstance(expression.this, exp.Table):
+                tables.add(expression.this.name.lower())
+            elif isinstance(expression.this, exp.Schema):
+                # Schema contains table name in .this
+                if expression.this.this and isinstance(expression.this.this, exp.Table):
+                    tables.add(expression.this.this.name.lower())
+                # Column names are in Schema.expressions as Identifier objects
+                if expression.this.expressions:
+                    for expr in expression.this.expressions:
+                        if isinstance(expr, exp.Identifier):
+                            col_name = expr.this.lower() if expr.this else None
+                            if col_name:
+                                columns.add(col_name)
+                        elif isinstance(expr, exp.Column):
+                            col_name = expr.name.lower() if expr.name else None
+                            if col_name:
+                                columns.add(col_name)
+
         # Extract JOIN relationships
         for join in expression.find_all(exp.Join):
             if isinstance(join.this, exp.Table):
@@ -52,9 +73,9 @@ def parse_sql_query(query: str) -> dict[str, Any]:
                     tables.add(join.this.alias.lower())
                 joins.append({"table": join_table, "alias": join.this.alias})
 
-        # Also check for table references in INSERT, UPDATE, DELETE
+        # Also check for table references in UPDATE, DELETE
         if (
-            isinstance(expression, (exp.Insert, exp.Update, exp.Delete))
+            isinstance(expression, (exp.Update, exp.Delete))
             and expression.this
             and isinstance(expression.this, exp.Table)
         ):
@@ -173,23 +194,52 @@ def parse_schema_file(schema_content: str) -> dict[str, Any]:
 
             # Also check for table-level constraints (FOREIGN KEY constraints)
             for constraint in expression.find_all(exp.ForeignKey):
-                if constraint.this and constraint.expressions:
-                    fk_column = (
-                        constraint.this.name.lower() if hasattr(constraint.this, "name") else None
-                    )
-                    if constraint.expressions and isinstance(constraint.expressions[0], exp.Table):
-                        ref_table = constraint.expressions[0].name.lower()
-                        ref_column = None
-                        if len(constraint.expressions) > 1:
-                            ref_column = (
-                                constraint.expressions[1].name.lower()
-                                if hasattr(constraint.expressions[1], "name")
-                                else None
-                            )
-                        if fk_column:
+                # Extract column name(s) from the constraint
+                fk_columns: list[str] = []
+                ref_table = None
+                ref_column = None
+
+                # Column names are in constraint.expressions as Identifier or Column expressions
+                for expr in constraint.expressions:
+                    if isinstance(expr, exp.Identifier):
+                        fk_columns.append(expr.this.lower() if expr.this else "")
+                    elif isinstance(expr, exp.Column):
+                        fk_columns.append(expr.name.lower() if expr.name else "")
+
+                # Find Reference expression to get referenced table and column
+                for ref in constraint.find_all(exp.Reference):
+                    if ref.this:
+                        if isinstance(ref.this, exp.Schema):
+                            # Schema.this contains the table name
+                            if ref.this.this:
+                                if isinstance(ref.this.this, exp.Table):
+                                    ref_table = ref.this.this.name.lower()
+                                elif isinstance(ref.this.this, exp.Identifier):
+                                    ref_table = (
+                                        ref.this.this.this.lower() if ref.this.this.this else None
+                                    )
+
+                            # Schema.expressions contains the referenced column names
+                            if ref.this.expressions:
+                                for ref_expr in ref.this.expressions:
+                                    if isinstance(ref_expr, exp.Identifier):
+                                        ref_column = (
+                                            ref_expr.this.lower() if ref_expr.this else None
+                                        )
+                                        break
+                                    elif isinstance(ref_expr, exp.Column) and ref_expr.name:
+                                        ref_column = ref_expr.name.lower()
+                                        break
+                        elif isinstance(ref.this, exp.Table):
+                            ref_table = ref.this.name.lower()
+
+                # Add foreign key for each column
+                if fk_columns and ref_table:
+                    for fk_col in fk_columns:
+                        if fk_col:  # Only add if column name is valid
                             foreign_keys.append(
                                 {
-                                    "column": fk_column,
+                                    "column": fk_col,
                                     "references_table": ref_table,
                                     "references_column": ref_column or "id",
                                 }
@@ -232,20 +282,29 @@ def parse_schema_file(schema_content: str) -> dict[str, Any]:
 
 def _parse_index(expression: exp.Create, tables: dict[str, dict[str, Any]]) -> None:
     """Parse CREATE INDEX statement and add to table metadata."""
-    if not isinstance(expression, exp.Create) or expression.kind != "INDEX" or not expression.this:
+    if not isinstance(expression, exp.Create) or expression.kind != "INDEX":
         return
 
-    table_name = expression.this.name.lower() if isinstance(expression.this, exp.Table) else None
+    if not expression.this or not isinstance(expression.this, exp.Index):
+        return
+
+    idx = expression.this
+
+    # Extract table name from Index (find Table nodes)
+    table_name = None
+    for table_node in idx.find_all(exp.Table):
+        table_name = table_node.name.lower()
+        break
+
     if not table_name or table_name not in tables:
         return
 
-    # Extract indexed columns
+    # Extract indexed columns from Index (find Column nodes)
     indexed_columns: list[str] = []
-    for col_expr in expression.expressions:
-        if hasattr(col_expr, "name"):
-            indexed_columns.append(col_expr.name.lower())
-        elif isinstance(col_expr, exp.Column):
-            indexed_columns.append(col_expr.name.lower() if col_expr.name else "")
+    for col_node in idx.find_all(exp.Column):
+        col_name = col_node.name.lower() if col_node.name else None
+        if col_name:
+            indexed_columns.append(col_name)
 
     if indexed_columns:
         index_name = expression.name.lower() if expression.name else "unknown"
