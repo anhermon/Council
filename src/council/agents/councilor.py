@@ -2,6 +2,7 @@
 
 import ast
 import asyncio
+import html
 import os
 import re
 import threading
@@ -35,6 +36,7 @@ settings = get_settings()
 
 # Resource limits for knowledge base files
 MAX_KNOWLEDGE_FILE_SIZE = 10 * 1024 * 1024  # 10MB per file
+MAX_KNOWLEDGE_CONTENT_LENGTH = 50000  # 50KB per knowledge file content
 MAX_EXTRA_INSTRUCTIONS_LENGTH = 10000  # Maximum length for extra instructions
 
 # Thread-safe storage for debug writers (keyed by file_path)
@@ -483,6 +485,36 @@ def _validate_extra_instructions(extra_instructions: str | None) -> str | None:
     return extra_instructions
 
 
+def _clean_knowledge_content(content: str) -> str:
+    """
+    Clean and optimize knowledge base content.
+
+    Removes unnecessary elements like images, badges, and normalizes whitespace
+    to reduce file size and improve readability.
+
+    Args:
+        content: Raw knowledge base content
+
+    Returns:
+        Cleaned content string
+    """
+    # Remove image markdown: [![alt](url)](link)
+    content = re.sub(r"\[!\[.*?\]\(.*?\)\]\(.*?\)", "", content)
+    # Remove standalone image links: ![alt](url)
+    content = re.sub(r"!\[.*?\]\(.*?\)", "", content)
+    # Remove badge patterns (shields.io, etc.) - more specific pattern
+    content = re.sub(r"\[!\[.*?badge.*?\]\(.*?\)\]", "", content, flags=re.IGNORECASE)
+    # Remove any remaining badge-like patterns
+    content = re.sub(
+        r"\[!\[.*?\]\(https?://.*?shields\.io.*?\)\]", "", content, flags=re.IGNORECASE
+    )
+    # Normalize excessive whitespace (3+ newlines to 2)
+    content = re.sub(r"\n{3,}", "\n\n", content)
+    # Remove trailing whitespace from lines
+    content = "\n".join(line.rstrip() for line in content.split("\n"))
+    return content.strip()
+
+
 def detect_language(file_path: str) -> str:
     """
     Detect programming language from file extension.
@@ -664,6 +696,19 @@ async def get_relevant_knowledge(file_paths: list[str]) -> tuple[str, set[str]]:
             content = await asyncio.to_thread(
                 lambda fp=file_path_capture: fp.read_text(encoding="utf-8")
             )
+
+            # Decode HTML entities (e.g., &#39; -> ', &quot; -> ", &amp; -> &)
+            content = html.unescape(content)
+
+            # Clean and optimize content (remove images, badges, normalize whitespace)
+            content = _clean_knowledge_content(content)
+
+            # Truncate if content is too long after cleaning
+            if len(content) > MAX_KNOWLEDGE_CONTENT_LENGTH:
+                content = content[:MAX_KNOWLEDGE_CONTENT_LENGTH] + "\n\n[... content truncated ...]"
+                logfire.debug(
+                    f"Truncated knowledge file {file_path.name} to {MAX_KNOWLEDGE_CONTENT_LENGTH} characters"
+                )
 
             knowledge_content.append(content)
 

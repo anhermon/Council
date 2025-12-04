@@ -4,6 +4,7 @@ import asyncio
 import json
 import logging
 import sys
+from datetime import datetime
 from pathlib import Path
 
 import click
@@ -163,7 +164,20 @@ def _output_json(context_data: dict) -> None:
 
 def _output_markdown(context_data: dict) -> None:
     """Output context as Markdown."""
+    # Calculate approximate output size for warning
+    output_size = len(str(context_data))
+    if output_size > 100 * 1024:  # 100KB
+        click.echo(
+            f"⚠️  Warning: Large context file ({output_size / 1024:.1f}KB). "
+            "Consider using --phases to focus on specific review areas.\n",
+            err=True,
+        )
+
+    # Generate timestamp
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S UTC")
+
     click.echo("# Code Review Context\n")
+    click.echo(f"**Generated:** {timestamp}\n")
     click.echo(f"## File: {context_data['file_path']}\n")
     click.echo(f"**Language:** {context_data['language']}\n")
 

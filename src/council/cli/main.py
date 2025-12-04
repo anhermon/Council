@@ -3,6 +3,7 @@
 import click
 import logfire
 
+from .commands.commit import commit
 from .commands.context import context
 from .commands.housekeeping import housekeeping
 from .commands.learn import learn
@@ -20,9 +21,10 @@ def main() -> None:
 
 
 # Register all commands
-main.add_command(review)
-main.add_command(learn)
+main.add_command(commit)
 main.add_command(context)
 main.add_command(housekeeping)
+main.add_command(learn)
+main.add_command(review)
 
 __all__ = ["main"]

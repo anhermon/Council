@@ -297,6 +297,9 @@ tasks:
     cmds:
       - mkdir -p {{.CONTEXT_DIR}}
       - |
+        TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+        TIMESTAMP_DIR="{{.CONTEXT_DIR}}/$TIMESTAMP"
+        mkdir -p "$TIMESTAMP_DIR"
         LIMIT="{{.LIMIT}}"
         OUTPUT_FILES=""
         COUNT=0
@@ -304,7 +307,7 @@ tasks:
           if [ "$COUNT" -ge "$LIMIT" ]; then
             break
           fi
-          OUTPUT_FILE="{{.CONTEXT_DIR}}/$(echo "$FILE" | tr '/' '_' | sed 's/\.py$/_context.md/')"
+          OUTPUT_FILE="$TIMESTAMP_DIR/$(echo "$FILE" | tr '/' '_' | sed 's/\.py$/_context.md/')"
           echo "📦 Generating context for $FILE... ($((COUNT+1))/$LIMIT)"
           {{.COUNCIL_CMD}} context "$FILE" --output markdown > "$OUTPUT_FILE" 2>/dev/null || true
           if [ -s "$OUTPUT_FILE" ]; then
@@ -314,7 +317,7 @@ tasks:
           fi
         done
         if [ -n "$OUTPUT_FILES" ]; then
-          echo "✅ Generated $COUNT context file(s)"
+          echo "✅ Generated $COUNT context file(s) in $TIMESTAMP_DIR"
         else
           echo "❌ No context files generated"
         fi
@@ -326,6 +329,9 @@ tasks:
     cmds:
       - mkdir -p {{.CONTEXT_DIR}}
       - |
+        TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+        TIMESTAMP_DIR="{{.CONTEXT_DIR}}/$TIMESTAMP"
+        mkdir -p "$TIMESTAMP_DIR"
         LIMIT="{{.LIMIT}}"
         PROMPT="{{.PROMPT}}"
         OUTPUT_FILES=""
@@ -335,7 +341,7 @@ tasks:
           if [ "$COUNT" -ge "$LIMIT" ]; then
             break
           fi
-          OUTPUT_FILE="{{.CONTEXT_DIR}}/$(echo "$FILE" | tr '/' '_' | sed 's/\.py$/_context.md/')"
+          OUTPUT_FILE="$TIMESTAMP_DIR/$(echo "$FILE" | tr '/' '_' | sed 's/\.py$/_context.md/')"
           ABS_OUTPUT_FILE="$(pwd)/$OUTPUT_FILE"
           echo "📦 Generating context for $FILE... ($((COUNT+1))/$LIMIT)"
           {{.COUNCIL_CMD}} context "$FILE" --output markdown > "$OUTPUT_FILE" 2>/dev/null || true
@@ -347,9 +353,9 @@ tasks:
           fi
         done
         if [ -n "$OUTPUT_FILES" ]; then
-          echo "🤖 Running Cursor Agent with $COUNT context file(s)..."
+          echo "🤖 Running Cursor Agent with $COUNT context file(s) from $TIMESTAMP_DIR..."
           echo "Note: Make sure you're authenticated with 'cursor-agent login' if needed"
-          cursor-agent -p "Please read and review the code context files in .council/context/ directory. $PROMPT"
+          cursor-agent -p "Please read and review the code context files in $TIMESTAMP_DIR directory. $PROMPT"
         else
           echo "❌ No context files generated"
         fi
