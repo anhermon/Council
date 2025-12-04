@@ -1,6 +1,32 @@
 # Pre-commit hooks configuration
 # See https://pre-commit.com for more information
 
+default_language_version:
+  python: python3.12
+
+exclude: |
+  (?x)^(
+      .*\.pyc|
+      .*\.pyo|
+      .*\.pyd|
+      __pycache__|
+      \.git/|
+      \.venv/|
+      venv/|
+      env/|
+      ENV/|
+      \.eggs/|
+      \.mypy_cache/|
+      \.ruff_cache/|
+      \.pytest_cache/|
+      htmlcov/|
+      dist/|
+      build/|
+      \.coverage|
+      uv\.lock|
+      node_modules/
+  )
+
 repos:
   # Ruff for linting and formatting
   - repo: https://github.com/astral-sh/ruff-pre-commit
@@ -9,6 +35,7 @@ repos:
       # Run the linter
       - id: ruff
         args: [--fix, --unsafe-fixes, --exit-non-zero-on-fix]
+        additional_dependencies: []
       # Run the formatter
       - id: ruff-format
 
@@ -27,3 +54,49 @@ repos:
       - id: debug-statements
       - id: mixed-line-ending
         args: ['--fix=lf']
+      - id: check-ast
+        description: Check Python files are valid Python
+      - id: check-docstring-first
+        description: Check that docstrings come before other code
+
+  # Security: Bandit for Python security vulnerability scanning
+  - repo: https://github.com/PyCQA/bandit
+    rev: 1.7.10
+    hooks:
+      - id: bandit
+        args: ['-ll']  # Low severity level
+        description: Check Python code for common security issues
+        types: [python]
+
+  # Security: Detect secrets in committed files (optional - requires baseline)
+  # To enable: Create baseline with: detect-secrets scan . --baseline .secrets.baseline
+  # Then uncomment the hook below
+  # - repo: https://github.com/Yelp/detect-secrets
+  #   rev: v1.5.0
+  #   hooks:
+  #     - id: detect-secrets
+  #       args: ['--baseline', '.secrets.baseline']
+  #       description: Detect secrets and credentials in committed files
+  #       exclude: package-lock.json|uv\.lock
+
+  # Security: Dependency vulnerability scanning (optional - requires safety to be installed)
+  # Install with: uv add --dev safety
+  - repo: local
+    hooks:
+      - id: safety
+        name: safety
+        entry: bash
+        language: system
+        args: ['-c', 'safety check --short-report || echo "⚠ safety not installed - run: uv add --dev safety"']
+        description: Check dependencies for known security vulnerabilities
+        pass_filenames: false
+        always_run: false
+
+  # Commit message linting
+  - repo: https://github.com/jorisroovers/gitlint
+    rev: v0.19.1
+    hooks:
+      - id: gitlint
+        description: Lint git commit messages
+        stages: [commit-msg]
+        args: ['--contrib', 'contrib-title-conventional-commits']

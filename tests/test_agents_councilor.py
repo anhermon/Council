@@ -523,7 +523,7 @@ class TestAddDynamicKnowledge:
 
             from jinja2 import Environment, FileSystemLoader
 
-            mock_env = Environment(loader=FileSystemLoader(str(templates_dir)))
+            mock_env = Environment(loader=FileSystemLoader(str(templates_dir)), autoescape=True)
             mock_get_env.return_value = mock_env
 
             result = await add_dynamic_knowledge(ctx)
@@ -556,7 +556,7 @@ class TestAddDynamicKnowledge:
 
             from jinja2 import Environment, FileSystemLoader
 
-            mock_env = Environment(loader=FileSystemLoader(str(templates_dir)))
+            mock_env = Environment(loader=FileSystemLoader(str(templates_dir)), autoescape=True)
             mock_get_env.return_value = mock_env
 
             result = await add_dynamic_knowledge(ctx)

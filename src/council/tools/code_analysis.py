@@ -5,8 +5,10 @@ import re
 from typing import Any
 
 import logfire
+from tree_sitter import Query, QueryCursor
 
 from ..config import get_settings
+from ..core.parser import LANGUAGE_MAP, get_code_parser
 from .path_utils import resolve_file_path
 
 settings = get_settings()
@@ -196,31 +198,162 @@ async def search_codebase(query: str, file_pattern: str | None = None) -> list[s
         raise
 
 
-async def analyze_imports(file_path: str, base_path: str | None = None) -> dict[str, Any]:
+def _analyze_imports_treesitter(
+    content: str,
+    extension: str,
+    parser_instance: Any,
+) -> dict[str, Any]:
     """
-    Analyze imports and dependencies of a Python file.
-
-    IMPORTANT: This tool only works for Python (.py) files. For other file types,
-    it will return empty results with a note. Only use this tool when reviewing
-    Python source code files.
-
-    This tool extracts import statements and analyzes dependencies to help
-    understand how code interacts with other modules.
+    Analyze imports using Tree Sitter for non-Python languages.
 
     Args:
-        file_path: Path to the Python file to analyze. Can be:
-            - Full path: "src/council/config.py"
-            - Relative path: "config.py" (will search from project root)
-            - Just filename: "config.py" (will search recursively in project)
+        content: File content
+        extension: File extension
+        parser_instance: CodeParser instance
+
+    Returns:
+        Dictionary with import analysis
+    """
+    tree, language_name = parser_instance.parse(content, extension)
+    if not tree:
+        return {
+            "imports": [],
+            "from_imports": [],
+            "local_imports": [],
+            "external_imports": [],
+            "note": f"Could not parse {extension} file (language: {language_name})",
+        }
+
+    language = parser_instance.get_language(language_name)
+    if not language:
+        return {
+            "imports": [],
+            "from_imports": [],
+            "local_imports": [],
+            "external_imports": [],
+            "note": f"Language {language_name} not initialized",
+        }
+
+    imports = []
+    local_imports = []
+    external_imports = []
+
+    # Define queries based on language
+    query_scm = ""
+    if language_name in ["javascript", "typescript", "tsx"]:
+        # Use separate queries for imports and require() calls
+        query_imports = "(import_statement source: (string) @source)"
+        query_require = """
+        (call_expression
+          function: (identifier) @func
+          arguments: (arguments (string) @source))
+        """
+        try:
+            # Query for import statements
+            query1 = Query(language, query_imports)
+            cursor1 = QueryCursor(query1)
+            captures1 = cursor1.captures(tree.root_node)
+            import_sources = captures1.get("source", [])
+
+            # Query for require() calls - need to filter by function name
+            query2 = Query(language, query_require)
+            cursor2 = QueryCursor(query2)
+            captures2 = cursor2.captures(tree.root_node)
+            require_funcs = captures2.get("func", [])
+            require_sources = captures2.get("source", [])
+
+            # Match require sources with their corresponding func nodes
+            # The captures dict maintains order, so we can pair them by index
+            for i, func_node in enumerate(require_funcs):
+                func_text = content[func_node.start_byte : func_node.end_byte]
+                if func_text == "require" and i < len(require_sources):
+                    import_sources.append(require_sources[i])
+
+            # Process all sources (imports + requires)
+            for source_node in import_sources:
+                text = content[source_node.start_byte : source_node.end_byte]
+                clean_text = text.strip("\"' \n\t")
+                if clean_text:
+                    imports.append(clean_text)
+                    if clean_text.startswith((".", "/")):
+                        local_imports.append(clean_text)
+                    else:
+                        external_imports.append(clean_text)
+            # Skip the rest of the if/elif chain since we handled JS/TS here
+            query_scm = None
+        except Exception as e:
+            logfire.warning(f"Tree Sitter query failed for {language_name}", error=str(e))
+            query_scm = None
+    elif language_name == "java":
+        query_scm = """
+        (import_declaration (scoped_identifier) @import)
+        """
+    elif language_name == "go":
+        query_scm = """
+        (import_spec path: (interpreted_string_literal) @path)
+        """
+
+    if query_scm:
+        try:
+            # New 0.23+ API: Query(language, source) -> QueryCursor(query)
+            query = Query(language, query_scm)
+            cursor = QueryCursor(query)
+            captures = cursor.captures(tree.root_node)
+
+            # captures is a dict: {'capture_name': [Node, Node, ...]})
+            # Extract source nodes for JS/TS, import nodes for Java, path nodes for Go
+            captures.get("source", [])
+            import_nodes = captures.get("import", [])
+            path_nodes = captures.get("path", [])
+            captures.get("func", [])
+
+            # JS/TS already handled above, skip here
+            if language_name not in ["javascript", "typescript", "tsx"]:
+                # For Java and Go, process import/path nodes directly
+                all_nodes = import_nodes + path_nodes
+                for node in all_nodes:
+                    text = content[node.start_byte : node.end_byte]
+                    clean_text = text.strip("\"' \n\t")
+                    if clean_text:
+                        imports.append(clean_text)
+                        if language_name == "java":
+                            # Java imports are always external/package level
+                            external_imports.append(clean_text)
+                        elif language_name == "go":
+                            # Go imports - check if relative
+                            if clean_text.startswith((".", "/")):
+                                local_imports.append(clean_text)
+                            else:
+                                external_imports.append(clean_text)
+
+        except Exception as e:
+            logfire.warning(f"Tree Sitter query failed for {language_name}", error=str(e))
+
+    return {
+        "imports": imports,
+        "from_imports": [],  # Simplified for non-Python
+        "local_imports": list(set(local_imports)),
+        "external_imports": list(set(external_imports)),
+    }
+
+
+async def analyze_imports(file_path: str, base_path: str | None = None) -> dict[str, Any]:
+    """
+    Analyze imports and dependencies of a file.
+
+    Supports Python, JavaScript, TypeScript, Java, and Go.
+
+    Args:
+        file_path: Path to the file to analyze.
         base_path: Optional base path (usually not needed, tool resolves automatically)
 
     Returns:
         Dictionary with import analysis including:
         - imports: List of imported modules/functions
-        - from_imports: List of from-import statements
+        - from_imports: List of from-import statements (Python only)
         - local_imports: List of local/relative imports
         - external_imports: List of external package imports
-        - note: Warning message if file is not Python
+        - note: Warning message if file type not supported
 
     Raises:
         ValueError: If path is invalid
@@ -237,79 +370,91 @@ async def analyze_imports(file_path: str, base_path: str | None = None) -> dict[
         if not resolved_path.is_file():
             raise ValueError(f"Path is not a file: {file_path}")
 
-        # Only analyze Python files for now
-        if resolved_path.suffix != ".py":
-            return {
-                "imports": [],
-                "from_imports": [],
-                "local_imports": [],
-                "external_imports": [],
-                "note": "Import analysis only supported for Python files",
-            }
-
-        # Read and parse file
+        # Read file content
         content = resolved_path.read_text(encoding="utf-8", errors="replace")
+        extension = resolved_path.suffix.lower()
 
-        try:
-            tree = ast.parse(content, filename=str(resolved_path))
-        except SyntaxError:
-            # File has syntax errors, return basic info
-            return {
-                "imports": [],
-                "from_imports": [],
-                "local_imports": [],
-                "external_imports": [],
-                "note": "File contains syntax errors, cannot parse imports",
-            }
+        # Use Python AST for Python files (legacy robust support)
+        if extension == ".py":
+            try:
+                tree = ast.parse(content, filename=str(resolved_path))
+            except SyntaxError:
+                return {
+                    "imports": [],
+                    "from_imports": [],
+                    "local_imports": [],
+                    "external_imports": [],
+                    "note": "File contains syntax errors, cannot parse imports",
+                }
 
-        imports: list[str] = []
-        from_imports: list[dict[str, str]] = []
-        local_imports: list[str] = []
-        external_imports: list[str] = []
+            imports: list[str] = []
+            from_imports: list[dict[str, str]] = []
+            local_imports: list[str] = []
+            external_imports: list[str] = []
 
-        # Determine if this is a local package (has __init__.py nearby)
-        project_root = settings.project_root.resolve()
-        is_local_package = False
-        try:
-            if resolved_path.is_relative_to(project_root):
-                is_local_package = True
-        except AttributeError:
-            is_local_package = str(resolved_path).startswith(str(project_root))
+            # Determine if this is a local package (has __init__.py nearby)
+            project_root = settings.project_root.resolve()
+            is_local_package = False
+            try:
+                if resolved_path.is_relative_to(project_root):
+                    is_local_package = True
+            except AttributeError:
+                is_local_package = str(resolved_path).startswith(str(project_root))
 
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Import):
-                for alias in node.names:
-                    import_name = alias.name
-                    imports.append(import_name)
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Import):
+                    for alias in node.names:
+                        import_name = alias.name
+                        imports.append(import_name)
+                        # Determine if local or external
+                        if is_local_package and any(
+                            (project_root / part).exists() for part in import_name.split(".")[:1]
+                        ):
+                            local_imports.append(import_name)
+                        else:
+                            external_imports.append(import_name)
+
+                elif isinstance(node, ast.ImportFrom) and node.module:
+                    module_name = node.module
+                    imported_items = [alias.name for alias in node.names]
+                    from_imports.append({"module": module_name, "items": imported_items})
                     # Determine if local or external
                     if is_local_package and any(
-                        (project_root / part).exists() for part in import_name.split(".")[:1]
+                        (project_root / part).exists() for part in module_name.split(".")[:1]
                     ):
-                        local_imports.append(import_name)
+                        local_imports.append(module_name)
                     else:
-                        external_imports.append(import_name)
+                        external_imports.append(module_name)
 
-            elif isinstance(node, ast.ImportFrom) and node.module:
-                module_name = node.module
-                imported_items = [alias.name for alias in node.names]
-                from_imports.append({"module": module_name, "items": imported_items})
-                # Determine if local or external
-                if is_local_package and any(
-                    (project_root / part).exists() for part in module_name.split(".")[:1]
-                ):
-                    local_imports.append(module_name)
-                else:
-                    external_imports.append(module_name)
+            result = {
+                "imports": imports,
+                "from_imports": from_imports,
+                "local_imports": list(set(local_imports)),
+                "external_imports": list(set(external_imports)),
+            }
 
-        result = {
-            "imports": imports,
-            "from_imports": from_imports,
-            "local_imports": list(set(local_imports)),
-            "external_imports": list(set(external_imports)),
-        }
+            logfire.info("Import analysis completed", file_path=file_path, imports=len(imports))
+            return result
 
-        logfire.info("Import analysis completed", file_path=file_path, imports=len(imports))
-        return result
+        # Use Tree Sitter for other supported languages
+        elif extension in LANGUAGE_MAP:
+            parser_instance = get_code_parser()
+            result = _analyze_imports_treesitter(content, extension, parser_instance)
+            logfire.info(
+                "Import analysis completed (Tree Sitter)",
+                file_path=file_path,
+                imports=len(result["imports"]),
+            )
+            return result
+
+        else:
+            return {
+                "imports": [],
+                "from_imports": [],
+                "local_imports": [],
+                "external_imports": [],
+                "note": f"Import analysis not supported for {extension} files",
+            }
 
     except Exception as e:
         logfire.error("Import analysis failed", file_path=file_path, error=str(e))

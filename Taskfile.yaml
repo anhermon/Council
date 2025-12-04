@@ -1,0 +1,498 @@
+version: '3'
+
+# Taskfile for The Council project lifecycle management
+# Run tasks with: task <task-name>
+# List all tasks with: task --list
+
+vars:
+  PYTHON: python3.12
+  UV: uv
+  SRC_DIR: src
+  TEST_DIR: tests
+  COVERAGE_DIR: htmlcov
+  COUNCIL_CMD: uv run council
+  CONTEXT_DIR: .council/context
+
+tasks:
+  default:
+    desc: Show available tasks
+    cmds:
+      - task --list
+
+  # ============================================================================
+  # Setup & Installation
+  # ============================================================================
+
+  setup:
+    desc: Install dependencies and set up development environment
+    deps: [install-hooks]
+    cmds:
+      - "{{.UV}} sync --dev"
+      - echo "✓ Dependencies installed"
+      - echo "✓ Pre-commit hooks installed"
+
+  install-hooks:
+    desc: Install/update pre-commit hooks
+    cmds:
+      - "{{.UV}} run pre-commit install"
+      - echo "✓ Pre-commit hooks installed"
+
+  # ============================================================================
+  # Development Workflow
+  # ============================================================================
+
+  lint:
+    desc: Run ruff linter (check only)
+    cmds:
+      - "{{.UV}} run ruff check {{.SRC_DIR}}"
+
+  lint:fix:
+    desc: Run ruff linter with auto-fix
+    cmds:
+      - "{{.UV}} run ruff check --fix {{.SRC_DIR}}"
+
+  format:
+    desc: Check code formatting with ruff
+    cmds:
+      - "{{.UV}} run ruff format --check {{.SRC_DIR}}"
+
+  format:fix:
+    desc: Format code with ruff
+    cmds:
+      - "{{.UV}} run ruff format {{.SRC_DIR}}"
+
+  test:
+    desc: Run all tests
+    cmds:
+      - "{{.UV}} run pytest {{.TEST_DIR}} -v --tb=short"
+
+  test:unit:
+    desc: Run unit tests only (exclude integration tests)
+    cmds:
+      - "{{.UV}} run pytest {{.TEST_DIR}} -v --tb=short -m 'not integration'"
+
+  test:integration:
+    desc: Run integration tests
+    cmds:
+      - "{{.UV}} run pytest {{.TEST_DIR}}/integration -v --tb=short -m integration"
+
+  test:cov:
+    desc: Run tests with coverage report
+    cmds:
+      - "{{.UV}} run pytest {{.TEST_DIR}} --cov={{.SRC_DIR}}/council --cov-report=html --cov-report=term"
+      - echo "Coverage report generated in {{.COVERAGE_DIR}}/index.html"
+
+  type-check:
+    desc: Run mypy type checking (optional, requires mypy in dependencies)
+    cmds:
+      - "{{.UV}} run mypy {{.SRC_DIR}}/council --ignore-missing-imports || echo '⚠ mypy not available or type checking skipped'"
+
+  # ============================================================================
+  # Quality Assurance
+  # ============================================================================
+
+  check:
+    desc: Run all basic checks (lint, format, test) - useful before commit
+    deps: [lint, format, "test:unit"]
+    cmds:
+      - echo "✓ All checks passed"
+
+  check:all:
+    desc: Comprehensive check including security scans
+    deps: [lint, format, "test:unit", security]
+    cmds:
+      - echo "✓ All comprehensive checks passed"
+
+  security:
+    desc: Run security scans (bandit, detect-secrets)
+    cmds:
+      - echo "Running security scans..."
+      - "{{.UV}} run bandit -r {{.SRC_DIR}} -ll || echo '⚠ bandit not available'"
+      - "{{.UV}} run detect-secrets scan --baseline .secrets.baseline || echo '⚠ detect-secrets baseline not found, run: detect-secrets scan --baseline .secrets.baseline'"
+      - echo "✓ Security scans completed"
+
+  security:deps:
+    desc: Check dependencies for security vulnerabilities
+    cmds:
+      - "{{.UV}} run safety check --short-report || echo '⚠ safety not available'"
+
+  quality:
+    desc: Run all quality checks (lint, format, type-check, security)
+    deps: [lint, format, type-check, security]
+    cmds:
+      - echo "✓ All quality checks completed"
+
+  # ============================================================================
+  # Build & Distribution
+  # ============================================================================
+
+  build:
+    desc: Build the package
+    cmds:
+      - "{{.UV}} build"
+      - echo "✓ Package built in dist/"
+
+  clean:
+    desc: Remove build artifacts and caches
+    cmds:
+      - rm -rf dist/
+      - rm -rf build/
+      - rm -rf *.egg-info/
+      - rm -rf .pytest_cache/
+      - rm -rf .mypy_cache/
+      - rm -rf .ruff_cache/
+      - find . -type d -name __pycache__ -exec rm -r {} + 2>/dev/null || true
+      - find . -type f -name "*.pyc" -delete 2>/dev/null || true
+      - find . -type f -name "*.pyo" -delete 2>/dev/null || true
+      - echo "✓ Cleanup completed"
+
+  clean:all:
+    desc: Deep clean including coverage reports and test artifacts
+    deps: [clean]
+    cmds:
+      - rm -rf {{.COVERAGE_DIR}}/
+      - rm -f .coverage
+      - rm -f coverage.json
+      - rm -f .coverage.*
+      - echo "✓ Deep cleanup completed"
+
+  # ============================================================================
+  # Council-Specific Commands
+  # ============================================================================
+
+  server:
+    desc: Run the MCP server
+    cmds:
+      - "{{.COUNCIL_CMD}} server"
+
+  review:
+    desc: "Review code using Council (usage: task review ARGS='path/to/file.py')"
+    cmds:
+      - "{{.COUNCIL_CMD}} review {{.ARGS}}"
+    vars:
+      ARGS: ''
+
+  review:uncommitted:
+    desc: Review uncommitted changes
+    cmds:
+      - "{{.COUNCIL_CMD}} review --uncommitted"
+
+  housekeeping:
+    desc: Run Council housekeeping command
+    cmds:
+      - "{{.COUNCIL_CMD}} housekeeping"
+
+  learn:
+    desc: "Learn rules using Council (usage: task learn URL='https://...' TOPIC='topic_name')"
+    cmds:
+      - "{{.COUNCIL_CMD}} learn {{.URL}} {{.TOPIC}}"
+    vars:
+      URL: ''
+      TOPIC: ''
+
+  # ============================================================================
+  # Council Context Commands - Generate context and run Cursor Agent
+  # ============================================================================
+  # Usage examples:
+  #   task context FILE_PATH=src/council/main.py
+  #   task context-agent FILE_PATH=src/council/main.py PROMPT="Review this code for security issues"
+  #   task context-all FILES="src/council/main.py src/council/config.py"
+  #   task context-project LIMIT=10
+  #   task context-diff FILE_PATH=src/council/main.py BASE_REF=main
+  #   task context-custom FILE_PATH=src/council/main.py INSTRUCTIONS="Focus on security"
+  #   task context-phases FILE_PATH=src/council/main.py PHASES="security,performance"
+
+  context:
+    desc: "Generate review context for a file (usage: task context FILE_PATH=path/to/file.py)"
+    cmds:
+      - mkdir -p {{.CONTEXT_DIR}}
+      - |
+        FILE_PATH="{{.FILE_PATH}}"
+        OUTPUT_FILE="{{.CONTEXT_DIR}}/$(basename "$FILE_PATH" | sed 's/\.[^.]*$//')_context.md"
+        {{.COUNCIL_CMD}} context "$FILE_PATH" --output markdown > "$OUTPUT_FILE"
+        echo "✅ Context generated: $OUTPUT_FILE"
+    vars:
+      FILE_PATH: '{{default "src/council/main.py" .FILE_PATH}}'
+
+  context-agent:
+    desc: "Generate context and run Cursor Agent with it (usage: task context-agent FILE_PATH=file.py PROMPT=\"Review this code\")"
+    cmds:
+      - mkdir -p {{.CONTEXT_DIR}}
+      - |
+        FILE_PATH="{{.FILE_PATH}}"
+        PROMPT="{{.PROMPT}}"
+        OUTPUT_FILE="{{.CONTEXT_DIR}}/$(basename "$FILE_PATH" | sed 's/\.[^.]*$//')_context.md"
+        echo "📦 Generating context for $FILE_PATH..."
+        {{.COUNCIL_CMD}} context "$FILE_PATH" --output markdown > "$OUTPUT_FILE"
+        echo "✅ Context generated: $OUTPUT_FILE"
+        echo "🤖 Running Cursor Agent with context..."
+        cursor-agent -p "Please review the code context in $OUTPUT_FILE. $PROMPT"
+    vars:
+      FILE_PATH: '{{default "src/council/main.py" .FILE_PATH}}'
+      PROMPT: '{{default "Review this code and provide feedback." .PROMPT}}'
+
+  context-all:
+    desc: "Generate review context for multiple files (usage: task context-all FILES=\"file1.py file2.py\")"
+    cmds:
+      - mkdir -p {{.CONTEXT_DIR}}
+      - |
+        FILES="{{.FILES}}"
+        OUTPUT_FILES=""
+        for FILE in $FILES; do
+          OUTPUT_FILE="{{.CONTEXT_DIR}}/$(basename "$FILE" | sed 's/\.[^.]*$//')_context.md"
+          echo "📦 Generating context for $FILE..."
+          {{.COUNCIL_CMD}} context "$FILE" --output markdown > "$OUTPUT_FILE" 2>/dev/null || true
+          if [ -s "$OUTPUT_FILE" ]; then
+            OUTPUT_FILES="$OUTPUT_FILES $OUTPUT_FILE"
+            echo "✅ Context generated: $OUTPUT_FILE"
+          else
+            echo "⚠️  Failed to generate context for $FILE"
+          fi
+        done
+        if [ -n "$OUTPUT_FILES" ]; then
+          echo "✅ Generated context files: $OUTPUT_FILES"
+        else
+          echo "❌ No context files generated"
+        fi
+    vars:
+      FILES: '{{default "src/council/main.py" .FILES}}'
+
+  context-all-agent:
+    desc: "Generate context for multiple files and run Cursor Agent (usage: task context-all-agent FILES=\"file1.py file2.py\" PROMPT=\"Review these files\")"
+    cmds:
+      - mkdir -p {{.CONTEXT_DIR}}
+      - |
+        FILES="{{.FILES}}"
+        PROMPT="{{.PROMPT}}"
+        OUTPUT_FILES=""
+        for FILE in $FILES; do
+          OUTPUT_FILE="{{.CONTEXT_DIR}}/$(basename "$FILE" | sed 's/\.[^.]*$//')_context.md"
+          echo "📦 Generating context for $FILE..."
+          {{.COUNCIL_CMD}} context "$FILE" --output markdown > "$OUTPUT_FILE" 2>/dev/null || true
+          if [ -s "$OUTPUT_FILE" ]; then
+            OUTPUT_FILES="$OUTPUT_FILES $OUTPUT_FILE"
+            echo "✅ Context generated: $OUTPUT_FILE"
+          else
+            echo "⚠️  Failed to generate context for $FILE"
+          fi
+        done
+        if [ -n "$OUTPUT_FILES" ]; then
+          echo "🤖 Running Cursor Agent with context files..."
+          FILE_LIST=$(echo "$OUTPUT_FILES" | tr ' ' '\n' | sed 's|^|@|')
+          cursor-agent -p "Please review the code contexts in these files: $OUTPUT_FILES. $PROMPT"
+        else
+          echo "❌ No context files generated"
+        fi
+    vars:
+      FILES: '{{default "src/council/main.py" .FILES}}'
+      PROMPT: '{{default "Review these files and provide feedback." .PROMPT}}'
+
+  context-project:
+    desc: "Generate review context for all Python files in src/ (usage: task context-project LIMIT=20)"
+    cmds:
+      - mkdir -p {{.CONTEXT_DIR}}
+      - |
+        LIMIT="{{.LIMIT}}"
+        OUTPUT_FILES=""
+        COUNT=0
+        for FILE in $(find src -name "*.py" -type f); do
+          if [ "$COUNT" -ge "$LIMIT" ]; then
+            break
+          fi
+          OUTPUT_FILE="{{.CONTEXT_DIR}}/$(echo "$FILE" | tr '/' '_' | sed 's/\.py$/_context.md/')"
+          echo "📦 Generating context for $FILE... ($((COUNT+1))/$LIMIT)"
+          {{.COUNCIL_CMD}} context "$FILE" --output markdown > "$OUTPUT_FILE" 2>/dev/null || true
+          if [ -s "$OUTPUT_FILE" ]; then
+            OUTPUT_FILES="$OUTPUT_FILES $OUTPUT_FILE"
+            echo "✅ Context generated: $OUTPUT_FILE"
+            COUNT=$((COUNT+1))
+          fi
+        done
+        if [ -n "$OUTPUT_FILES" ]; then
+          echo "✅ Generated $COUNT context file(s)"
+        else
+          echo "❌ No context files generated"
+        fi
+    vars:
+      LIMIT: '{{default "20" .LIMIT}}'
+
+  context-project-agent:
+    desc: "Generate context for project and run Cursor Agent (usage: task context-project-agent LIMIT=20 PROMPT=\"Review the project\")"
+    cmds:
+      - mkdir -p {{.CONTEXT_DIR}}
+      - |
+        LIMIT="{{.LIMIT}}"
+        PROMPT="{{.PROMPT}}"
+        OUTPUT_FILES=""
+        COUNT=0
+        for FILE in $(find src -name "*.py" -type f); do
+          if [ "$COUNT" -ge "$LIMIT" ]; then
+            break
+          fi
+          OUTPUT_FILE="{{.CONTEXT_DIR}}/$(echo "$FILE" | tr '/' '_' | sed 's/\.py$/_context.md/')"
+          echo "📦 Generating context for $FILE... ($((COUNT+1))/$LIMIT)"
+          {{.COUNCIL_CMD}} context "$FILE" --output markdown > "$OUTPUT_FILE" 2>/dev/null || true
+          if [ -s "$OUTPUT_FILE" ]; then
+            OUTPUT_FILES="$OUTPUT_FILES $OUTPUT_FILE"
+            echo "✅ Context generated: $OUTPUT_FILE"
+            COUNT=$((COUNT+1))
+          fi
+        done
+        if [ -n "$OUTPUT_FILES" ]; then
+          echo "🤖 Running Cursor Agent with $COUNT context file(s)..."
+          cursor-agent -p "Please review the code contexts in these files: $OUTPUT_FILES. $PROMPT"
+        else
+          echo "❌ No context files generated"
+        fi
+    vars:
+      LIMIT: '{{default "20" .LIMIT}}'
+      PROMPT: '{{default "Review the project code and provide feedback." .PROMPT}}'
+
+  context-diff:
+    desc: "Generate review context for diff-based review (usage: task context-diff FILE_PATH=file.py BASE_REF=main)"
+    cmds:
+      - mkdir -p {{.CONTEXT_DIR}}
+      - |
+        FILE_PATH="{{.FILE_PATH}}"
+        BASE_REF="{{.BASE_REF}}"
+        OUTPUT_FILE="{{.CONTEXT_DIR}}/$(basename "$FILE_PATH" | sed 's/\.[^.]*$//')_diff_${BASE_REF}_context.md"
+        {{.COUNCIL_CMD}} context "$FILE_PATH" --output markdown --diff "$BASE_REF" > "$OUTPUT_FILE"
+        echo "✅ Diff context generated: $OUTPUT_FILE"
+    vars:
+      FILE_PATH: '{{default "src/council/main.py" .FILE_PATH}}'
+      BASE_REF: '{{default "HEAD" .BASE_REF}}'
+
+  context-diff-agent:
+    desc: "Generate diff context and run Cursor Agent (usage: task context-diff-agent FILE_PATH=file.py BASE_REF=main PROMPT=\"Review changes\")"
+    cmds:
+      - mkdir -p {{.CONTEXT_DIR}}
+      - |
+        FILE_PATH="{{.FILE_PATH}}"
+        BASE_REF="{{.BASE_REF}}"
+        PROMPT="{{.PROMPT}}"
+        OUTPUT_FILE="{{.CONTEXT_DIR}}/$(basename "$FILE_PATH" | sed 's/\.[^.]*$//')_diff_${BASE_REF}_context.md"
+        echo "📦 Generating diff context for $FILE_PATH (base: $BASE_REF)..."
+        {{.COUNCIL_CMD}} context "$FILE_PATH" --output markdown --diff "$BASE_REF" > "$OUTPUT_FILE"
+        echo "✅ Diff context generated: $OUTPUT_FILE"
+        echo "🤖 Running Cursor Agent with diff context..."
+        cursor-agent -p "Please review the diff context in $OUTPUT_FILE. $PROMPT"
+    vars:
+      FILE_PATH: '{{default "src/council/main.py" .FILE_PATH}}'
+      BASE_REF: '{{default "HEAD" .BASE_REF}}'
+      PROMPT: '{{default "Review the changes and provide feedback." .PROMPT}}'
+
+  context-custom:
+    desc: "Generate review context with custom instructions (usage: task context-custom FILE_PATH=file.py INSTRUCTIONS=\"Focus on security\")"
+    cmds:
+      - mkdir -p {{.CONTEXT_DIR}}
+      - |
+        FILE_PATH="{{.FILE_PATH}}"
+        INSTRUCTIONS="{{.INSTRUCTIONS}}"
+        OUTPUT_FILE="{{.CONTEXT_DIR}}/$(basename "$FILE_PATH" | sed 's/\.[^.]*$//')_custom_context.md"
+        {{.COUNCIL_CMD}} context "$FILE_PATH" --output markdown --extra-instructions "$INSTRUCTIONS" > "$OUTPUT_FILE"
+        echo "✅ Custom context generated: $OUTPUT_FILE"
+    vars:
+      FILE_PATH: '{{default "src/council/main.py" .FILE_PATH}}'
+      INSTRUCTIONS: '{{default "Focus on security and performance" .INSTRUCTIONS}}'
+
+  context-custom-agent:
+    desc: "Generate custom context and run Cursor Agent (usage: task context-custom-agent FILE_PATH=file.py INSTRUCTIONS=\"Focus on security\" PROMPT=\"Review code\")"
+    cmds:
+      - mkdir -p {{.CONTEXT_DIR}}
+      - |
+        FILE_PATH="{{.FILE_PATH}}"
+        INSTRUCTIONS="{{.INSTRUCTIONS}}"
+        PROMPT="{{.PROMPT}}"
+        OUTPUT_FILE="{{.CONTEXT_DIR}}/$(basename "$FILE_PATH" | sed 's/\.[^.]*$//')_custom_context.md"
+        echo "📦 Generating custom context for $FILE_PATH..."
+        {{.COUNCIL_CMD}} context "$FILE_PATH" --output markdown --extra-instructions "$INSTRUCTIONS" > "$OUTPUT_FILE"
+        echo "✅ Custom context generated: $OUTPUT_FILE"
+        echo "🤖 Running Cursor Agent with custom context..."
+        cursor-agent -p "Please review the code context in $OUTPUT_FILE. $PROMPT"
+    vars:
+      FILE_PATH: '{{default "src/council/main.py" .FILE_PATH}}'
+      INSTRUCTIONS: '{{default "Focus on security and performance" .INSTRUCTIONS}}'
+      PROMPT: '{{default "Review this code and provide feedback." .PROMPT}}'
+
+  context-phases:
+    desc: "Generate review context for specific phases and open in Cursor (usage: task context-phases FILE_PATH=file.py PHASES=\"security,performance\")"
+    cmds:
+      - mkdir -p {{.CONTEXT_DIR}}
+      - |
+        FILE_PATH="{{.FILE_PATH}}"
+        PHASES="{{.PHASES}}"
+        OUTPUT_FILE="{{.CONTEXT_DIR}}/$(basename "$FILE_PATH" | sed 's/\.[^.]*$//')_${PHASES//,/_}_context.md"
+        {{.COUNCIL_CMD}} context "$FILE_PATH" --output markdown --phases "$PHASES" > "$OUTPUT_FILE"
+        echo "✅ Phase-specific context generated: $OUTPUT_FILE"
+        cursor "$OUTPUT_FILE"
+    vars:
+      FILE_PATH: '{{default "src/council/main.py" .FILE_PATH}}'
+      PHASES: '{{default "security,performance" .PHASES}}'
+
+  context-clean:
+    desc: Remove all generated context files
+    cmds:
+      - rm -rf {{.CONTEXT_DIR}}/*.md
+      - echo "✅ Context files cleaned"
+
+  context-list:
+    desc: List all generated context files
+    cmds:
+      - |
+        if [ -d {{.CONTEXT_DIR}} ]; then
+          ls -lh {{.CONTEXT_DIR}}/*.md 2>/dev/null || echo "No context files found"
+        else
+          echo "Context directory does not exist"
+        fi
+
+  # ============================================================================
+  # CI/CD Alignment
+  # ============================================================================
+
+  ci:lint:
+    desc: Run CI lint job (matches GitHub Actions)
+    cmds:
+      - "{{.UV}} sync --dev"
+      - "{{.UV}} run ruff check ."
+      - "{{.UV}} run ruff format --check ."
+
+  ci:test:
+    desc: Run CI test job (matches GitHub Actions)
+    cmds:
+      - "{{.UV}} sync --dev"
+      - "{{.UV}} run pytest {{.TEST_DIR}} -v --tb=short -m 'not integration'"
+      - "{{.UV}} run pytest {{.TEST_DIR}}/integration -v --tb=short -m integration || true"
+
+  ci:
+    desc: Run all CI checks locally
+    deps: ["ci:lint", "ci:test"]
+    cmds:
+      - echo "✓ All CI checks passed"
+
+  # ============================================================================
+  # Utility Tasks
+  # ============================================================================
+
+  pre-commit:
+    desc: Run all pre-commit hooks manually
+    cmds:
+      - "{{.UV}} run pre-commit run --all-files"
+
+  pre-commit:update:
+    desc: Update pre-commit hooks to latest versions
+    cmds:
+      - "{{.UV}} run pre-commit autoupdate"
+      - echo "✓ Pre-commit hooks updated"
+
+  deps:update:
+    desc: Update dependencies
+    cmds:
+      - "{{.UV}} sync --dev --upgrade"
+      - echo "✓ Dependencies updated"
+
+  deps:check:
+    desc: Check for outdated dependencies
+    cmds:
+      - "{{.UV}} tree --outdated || echo '⚠ uv tree --outdated not available'"
+
+      - "{{.UV}} tree --outdated || echo '⚠ uv tree --outdated not available'"

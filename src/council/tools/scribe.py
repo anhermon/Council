@@ -29,7 +29,7 @@ PRIVATE_IP_RANGES = [
 BLOCKED_HOSTNAMES = {
     "localhost",
     "127.0.0.1",
-    "0.0.0.0",
+    "0.0.0.0",  # nosec B104 - This is a blocked hostname, not a binding address
     "::1",
 }
 

@@ -183,7 +183,7 @@ class TestReviewCode:
             assert "validation" in result.error.lower()
 
     @pytest.mark.asyncio
-    async def test_review_code_file_not_found(self, _mock_settings):
+    async def test_review_code_file_not_found(self):
         """Test review_code with nonexistent file."""
         with (
             patch("council.main.get_packed_context", new_callable=AsyncMock) as mock_context,
@@ -197,7 +197,7 @@ class TestReviewCode:
             assert "not found" in result.error.lower()
 
     @pytest.mark.asyncio
-    async def test_review_code_permission_error(self, _mock_settings):
+    async def test_review_code_permission_error(self):
         """Test review_code with permission error."""
         with (
             patch("council.main.get_packed_context", new_callable=AsyncMock) as mock_context,
@@ -248,7 +248,7 @@ class TestLearnRules:
         assert result.error_code == "INVALID_URL"
 
     @pytest.mark.asyncio
-    async def test_learn_rules_success(self, _mock_settings):
+    async def test_learn_rules_success(self):
         """Test successful learn_rules execution."""
         with (
             patch("council.main.fetch_and_summarize", new_callable=AsyncMock) as mock_fetch,
@@ -262,7 +262,7 @@ class TestLearnRules:
             assert result.message == "Successfully learned rules"
 
     @pytest.mark.asyncio
-    async def test_learn_rules_timeout(self, _mock_settings):
+    async def test_learn_rules_timeout(self):
         """Test learn_rules with timeout."""
         with (
             patch("council.main.fetch_and_summarize", new_callable=AsyncMock) as mock_fetch,
@@ -276,7 +276,7 @@ class TestLearnRules:
             assert "timeout" in result.error.lower() or "timed out" in result.error.lower()
 
     @pytest.mark.asyncio
-    async def test_learn_rules_exception(self, _mock_settings):
+    async def test_learn_rules_exception(self):
         """Test learn_rules with general exception."""
         with (
             patch("council.main.fetch_and_summarize", new_callable=AsyncMock) as mock_fetch,

@@ -239,7 +239,7 @@ class TestRunAgentReview:
     """Test run_agent_review function."""
 
     @pytest.mark.asyncio
-    async def test_run_agent_review_success(self, _mock_settings):
+    async def test_run_agent_review_success(self):
         """Test successful agent review."""
         spinner = Spinner(enabled=False)
         deps = CouncilDeps(file_path="test.py")

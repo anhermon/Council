@@ -460,7 +460,7 @@ def _get_jinja_env() -> Environment:
                         )
                     _jinja_env = Environment(
                         loader=FileSystemLoader(str(settings.templates_dir)),
-                        autoescape=False,
+                        autoescape=True,  # Enable autoescape for XSS protection
                         trim_blocks=True,
                         lstrip_blocks=True,
                     )
