@@ -1,5 +1,7 @@
 """Tests for path_utils module."""
 
+from pathlib import Path
+
 import pytest
 
 from council.tools.path_utils import (
@@ -224,3 +226,45 @@ class TestResolveFilePath:
 
         result = resolve_file_path("new_file.py", base_path=str(subdir))
         assert result == (subdir / "new_file.py").resolve()
+
+    def test_resolve_with_invalid_base_path(self, mock_settings):
+        """Test resolving with invalid base_path falls back to project root."""
+        test_file = mock_settings.project_root / "test.py"
+        test_file.touch()
+
+        # Use an invalid base_path that will cause OSError
+        result = resolve_file_path("test.py", base_path="/nonexistent/path")
+        # Should fallback to project root
+        assert result == test_file.resolve()
+
+    def test_resolve_with_base_path_as_file(self, mock_settings):
+        """Test resolving when base_path is a file (should use its parent)."""
+        test_file = mock_settings.project_root / "test.py"
+        test_file.touch()
+        subdir = mock_settings.project_root / "subdir"
+        subdir.mkdir()
+        base_file = subdir / "base.py"
+        base_file.touch()
+        target_file = subdir / "target.py"
+        target_file.touch()
+
+        result = resolve_file_path("target.py", base_path=str(base_file))
+        assert result == target_file.resolve()
+
+    def test_path_validation_error_handling(self, mock_settings, tmp_path):
+        """Test path validation error handling."""
+        allowed_roots = {mock_settings.project_root.resolve()}
+        # Create a path that will cause OSError during resolution
+        invalid_path = tmp_path / ".." / ".." / "invalid"
+
+        # Should return False for unsafe path
+        assert _is_safe_path(invalid_path, allowed_roots) is False
+
+    def test_candidate_validation_with_oserror(self, mock_settings):
+        """Test candidate validation handles OSError."""
+        allowed_roots = {mock_settings.project_root.resolve()}
+        # Use a path that might cause OSError
+        invalid_candidate = Path("/nonexistent/path/file.py")
+
+        result = _validate_and_resolve_candidate(invalid_candidate, allowed_roots)
+        assert result is None

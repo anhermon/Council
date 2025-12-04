@@ -81,8 +81,10 @@ async def get_git_diff(file_path: str, base_ref: str = "HEAD", base_path: str | 
             else:
                 rel_path = str(resolved_path)
         except AttributeError:
-            # Python < 3.9
-            rel_path = str(resolved_path).replace(str(project_root) + "/", "")
+            # Python < 3.9 fallback
+            resolved_str = str(resolved_path)
+            project_root_str = str(project_root)
+            rel_path = resolved_str.replace(project_root_str + "/", "")
 
         # Check if file is tracked in git
         try:
@@ -247,8 +249,10 @@ async def get_file_history(
             else:
                 rel_path = str(resolved_path)
         except AttributeError:
-            # Python < 3.9
-            rel_path = str(resolved_path).replace(str(project_root) + "/", "")
+            # Python < 3.9 fallback
+            resolved_str = str(resolved_path)
+            project_root_str = str(project_root)
+            rel_path = resolved_str.replace(project_root_str + "/", "")
 
         # Get commit history
         try:

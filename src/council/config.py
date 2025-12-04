@@ -108,6 +108,26 @@ class Settings:
             max_concurrent_reviews=cls._parse_int_env("COUNCIL_MAX_CONCURRENT_REVIEWS", 2),
         )
 
+    @classmethod
+    def create(
+        cls,
+        project_root: Path,
+        knowledge_dir: Path,
+        templates_dir: Path,
+        **kwargs,
+    ) -> "Settings":
+        """Create settings with explicit paths. Useful for testing."""
+        # Validate templates directory exists
+        if not templates_dir.exists():
+            raise RuntimeError(f"Templates directory does not exist: {templates_dir}")
+
+        return cls(
+            project_root=project_root,
+            knowledge_dir=knowledge_dir,
+            templates_dir=templates_dir,
+            **kwargs,
+        )
+
     @staticmethod
     def _resolve_project_root() -> Path:
         """Resolve the project root directory."""

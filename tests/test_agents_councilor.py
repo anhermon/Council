@@ -306,3 +306,327 @@ class TestGetCouncilorAgent:
                 agent1 = get_councilor_agent()
                 agent2 = get_councilor_agent()
                 assert agent1 is agent2
+
+    def test_get_councilor_agent_error_handling(self):
+        """Test error handling in get_councilor_agent."""
+        # Reset the global agent
+        import council.agents.councilor as councilor_module
+        from council.agents.councilor import get_councilor_agent
+
+        councilor_module._councilor_agent = None
+
+        with (
+            patch("council.agents.councilor.MODEL_NAME", "test-model"),
+            patch(
+                "council.agents.councilor._create_model",
+                side_effect=RuntimeError("Model creation failed"),
+            ),
+            pytest.raises(RuntimeError, match="Model creation failed"),
+        ):
+            get_councilor_agent()
+
+    def test_council_deps_path_outside_project_root(self, tmp_path):
+        """Test CouncilDeps with path outside project root."""
+        from council.agents.councilor import CouncilDeps
+
+        # Create a path outside project root
+        outside_path = tmp_path / "outside" / "file.py"
+        outside_path.parent.mkdir(parents=True)
+
+        # Should log warning but not raise error
+        deps = CouncilDeps(file_path=str(outside_path))
+        assert deps.file_path == str(outside_path)
+
+    def test_council_deps_invalid_review_phases(self):
+        """Test CouncilDeps with invalid review phases."""
+        with pytest.raises(ValueError, match="Invalid review phases"):
+            CouncilDeps(file_path="test.py", review_phases=["invalid_phase"])
+
+    def test_council_deps_valid_review_phases(self):
+        """Test CouncilDeps with valid review phases."""
+        deps = CouncilDeps(
+            file_path="test.py",
+            review_phases=["security", "performance", "maintainability", "best_practices"],
+        )
+        assert deps.review_phases == [
+            "security",
+            "performance",
+            "maintainability",
+            "best_practices",
+        ]
+
+
+class TestCreateModel:
+    """Test _create_model function."""
+
+    def test_create_model_no_model_name(self):
+        """Test _create_model without MODEL_NAME."""
+        from council.agents.councilor import _create_model
+
+        with (
+            patch("council.agents.councilor.MODEL_NAME", None),
+            pytest.raises(RuntimeError, match="COUNCIL_MODEL environment variable is required"),
+        ):
+            _create_model()
+
+    def test_create_model_litellm_config(self):
+        """Test _create_model with LiteLLM configuration."""
+        from pydantic_ai.models.openai import OpenAIChatModel
+
+        from council.agents.councilor import _create_model
+
+        with (
+            patch("council.agents.councilor.MODEL_NAME", "test-model"),
+            patch("council.agents.councilor.settings") as mock_settings,
+        ):
+            mock_settings.litellm_base_url = "https://api.example.com"
+            mock_settings.litellm_api_key = "test-key"
+            mock_settings.openai_api_key = None
+
+            result = _create_model()
+            assert isinstance(result, OpenAIChatModel)
+
+    def test_create_model_openai_direct(self):
+        """Test _create_model with OpenAI direct configuration."""
+        from council.agents.councilor import _create_model
+
+        with (
+            patch("council.agents.councilor.MODEL_NAME", "gpt-4"),
+            patch("council.agents.councilor.settings") as mock_settings,
+        ):
+            mock_settings.litellm_base_url = None
+            mock_settings.litellm_api_key = None
+            mock_settings.openai_api_key = "test-key"
+
+            result = _create_model()
+            assert result == "openai:gpt-4"
+
+    def test_create_model_openai_with_provider_prefix(self):
+        """Test _create_model with provider prefix."""
+        from council.agents.councilor import _create_model
+
+        with (
+            patch("council.agents.councilor.MODEL_NAME", "anthropic:claude-3-5-sonnet"),
+            patch("council.agents.councilor.settings") as mock_settings,
+        ):
+            mock_settings.litellm_base_url = None
+            mock_settings.litellm_api_key = None
+            mock_settings.openai_api_key = "test-key"
+
+            result = _create_model()
+            assert result == "anthropic:claude-3-5-sonnet"
+
+    def test_create_model_no_api_keys(self):
+        """Test _create_model without any API keys."""
+        from council.agents.councilor import _create_model
+
+        with (
+            patch("council.agents.councilor.MODEL_NAME", "test-model"),
+            patch("council.agents.councilor.settings") as mock_settings,
+        ):
+            mock_settings.litellm_base_url = None
+            mock_settings.litellm_api_key = None
+            mock_settings.openai_api_key = None
+
+            with pytest.raises(RuntimeError, match="No API keys configured"):
+                _create_model()
+
+
+class TestGetJinjaEnv:
+    """Test _get_jinja_env function."""
+
+    def test_get_jinja_env_creates_environment(self, tmp_path):
+        """Test _get_jinja_env creates Jinja2 environment."""
+        import council.agents.councilor as councilor_module
+        from council.agents.councilor import _get_jinja_env
+
+        # Reset global
+        councilor_module._jinja_env = None
+
+        templates_dir = tmp_path / "templates"
+        templates_dir.mkdir()
+        template_file = templates_dir / "system_prompt.j2"
+        template_file.write_text("Test template")
+
+        with patch("council.agents.councilor.settings") as mock_settings:
+            mock_settings.templates_dir = templates_dir
+
+            env = _get_jinja_env()
+            assert env is not None
+            assert env.loader is not None
+
+    def test_get_jinja_env_template_dir_not_exists(self, tmp_path):
+        """Test _get_jinja_env when template directory doesn't exist."""
+        import council.agents.councilor as councilor_module
+        from council.agents.councilor import _get_jinja_env
+
+        # Reset global
+        councilor_module._jinja_env = None
+
+        nonexistent_dir = tmp_path / "nonexistent_templates"
+
+        with patch("council.agents.councilor.settings") as mock_settings:
+            mock_settings.templates_dir = nonexistent_dir
+
+            with pytest.raises(FileNotFoundError, match="Templates directory does not exist"):
+                _get_jinja_env()
+
+    def test_get_jinja_env_singleton(self, tmp_path):
+        """Test _get_jinja_env returns singleton."""
+        import council.agents.councilor as councilor_module
+        from council.agents.councilor import _get_jinja_env
+
+        # Reset global
+        councilor_module._jinja_env = None
+
+        templates_dir = tmp_path / "templates"
+        templates_dir.mkdir()
+        template_file = templates_dir / "system_prompt.j2"
+        template_file.write_text("Test template")
+
+        with patch("council.agents.councilor.settings") as mock_settings:
+            mock_settings.templates_dir = templates_dir
+
+            env1 = _get_jinja_env()
+            env2 = _get_jinja_env()
+            assert env1 is env2
+
+
+class TestAddDynamicKnowledge:
+    """Test add_dynamic_knowledge function."""
+
+    @pytest.mark.asyncio
+    async def test_add_dynamic_knowledge_basic(self, tmp_path):
+        """Test add_dynamic_knowledge with basic setup."""
+
+        from council.agents.councilor import CouncilDeps, add_dynamic_knowledge
+
+        knowledge_dir = tmp_path / "knowledge"
+        knowledge_dir.mkdir()
+        templates_dir = tmp_path / "templates"
+        templates_dir.mkdir()
+        template_file = templates_dir / "system_prompt.j2"
+        template_file.write_text("Template: {{ domain_rules }}")
+
+        python_file = knowledge_dir / "python.md"
+        python_file.write_text("# Python Knowledge")
+
+        deps = CouncilDeps(file_path="test.py")
+        # Create a mock RunContext - RunContext is created by pydantic-ai internally
+        ctx = MagicMock()
+        ctx.deps = deps
+
+        with (
+            patch("council.agents.councilor.settings") as mock_settings,
+            patch("council.agents.councilor._get_jinja_env") as mock_get_env,
+        ):
+            mock_settings.knowledge_dir = knowledge_dir
+            mock_settings.templates_dir = templates_dir
+
+            from jinja2 import Environment, FileSystemLoader
+
+            mock_env = Environment(loader=FileSystemLoader(str(templates_dir)))
+            mock_get_env.return_value = mock_env
+
+            result = await add_dynamic_knowledge(ctx)
+            assert isinstance(result, str)
+            assert "Python" in result or "python" in result.lower()
+
+    @pytest.mark.asyncio
+    async def test_add_dynamic_knowledge_with_review_phases(self, tmp_path):
+        """Test add_dynamic_knowledge with review phases."""
+        from council.agents.councilor import CouncilDeps, add_dynamic_knowledge
+
+        knowledge_dir = tmp_path / "knowledge"
+        knowledge_dir.mkdir()
+        templates_dir = tmp_path / "templates"
+        templates_dir.mkdir()
+        template_file = templates_dir / "system_prompt.j2"
+        template_file.write_text("Template")
+
+        deps = CouncilDeps(file_path="test.py", review_phases=["security", "performance"])
+        # Create a mock RunContext - RunContext is created by pydantic-ai internally
+        ctx = MagicMock()
+        ctx.deps = deps
+
+        with (
+            patch("council.agents.councilor.settings") as mock_settings,
+            patch("council.agents.councilor._get_jinja_env") as mock_get_env,
+        ):
+            mock_settings.knowledge_dir = knowledge_dir
+            mock_settings.templates_dir = templates_dir
+
+            from jinja2 import Environment, FileSystemLoader
+
+            mock_env = Environment(loader=FileSystemLoader(str(templates_dir)))
+            mock_get_env.return_value = mock_env
+
+            result = await add_dynamic_knowledge(ctx)
+            assert "security" in result.lower()
+            assert "performance" in result.lower()
+
+    @pytest.mark.asyncio
+    async def test_add_dynamic_knowledge_template_error(self, tmp_path):
+        """Test add_dynamic_knowledge with template error."""
+        from jinja2 import TemplateError
+
+        from council.agents.councilor import CouncilDeps, add_dynamic_knowledge
+
+        knowledge_dir = tmp_path / "knowledge"
+        knowledge_dir.mkdir()
+
+        deps = CouncilDeps(file_path="test.py")
+        # Create a mock RunContext - RunContext is created by pydantic-ai internally
+        ctx = MagicMock()
+        ctx.deps = deps
+
+        with (
+            patch("council.agents.councilor.settings") as mock_settings,
+            patch("council.agents.councilor._get_jinja_env") as mock_get_env,
+        ):
+            mock_settings.knowledge_dir = knowledge_dir
+
+            mock_env = MagicMock()
+            mock_env.get_template.side_effect = TemplateError("Template not found")
+            mock_get_env.return_value = mock_env
+
+            with pytest.raises(TemplateError):
+                await add_dynamic_knowledge(ctx)
+
+    @pytest.mark.asyncio
+    async def test_add_dynamic_knowledge_max_files_limit(self, tmp_path):
+        """Test add_dynamic_knowledge with max files limit."""
+
+        from council.agents.councilor import MAX_KNOWLEDGE_FILES, CouncilDeps, add_dynamic_knowledge
+
+        knowledge_dir = tmp_path / "knowledge"
+        knowledge_dir.mkdir()
+        templates_dir = tmp_path / "templates"
+        templates_dir.mkdir()
+        template_file = templates_dir / "system_prompt.j2"
+        template_file.write_text("Template")
+
+        # Create more files than the limit
+        for i in range(MAX_KNOWLEDGE_FILES + 10):
+            md_file = knowledge_dir / f"file_{i}.md"
+            md_file.write_text(f"Content {i}")
+
+        deps = CouncilDeps(file_path="test.py")
+        # Create a mock RunContext - RunContext is created by pydantic-ai internally
+        ctx = MagicMock()
+        ctx.deps = deps
+
+        with (
+            patch("council.agents.councilor.settings") as mock_settings,
+            patch("council.agents.councilor._get_jinja_env") as mock_get_env,
+        ):
+            mock_settings.knowledge_dir = knowledge_dir
+            mock_settings.templates_dir = templates_dir
+
+            from jinja2 import Environment, FileSystemLoader
+
+            mock_env = Environment(loader=FileSystemLoader(str(templates_dir)))
+            mock_get_env.return_value = mock_env
+
+            result = await add_dynamic_knowledge(ctx)
+            assert isinstance(result, str)

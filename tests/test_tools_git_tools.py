@@ -1,6 +1,6 @@
 """Tests for git integration tools."""
 
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -240,3 +240,166 @@ def456|2024-01-02|Author Name|Add feature"""
             result = await get_file_history(str(test_file))
             # Should handle gracefully, possibly returning empty or partial results
             assert isinstance(result, list)
+
+    @pytest.mark.asyncio
+    async def test_get_file_history_nonexistent_file(self, mock_settings):  # noqa: ARG002
+        """Test get_file_history with nonexistent file."""
+        with pytest.raises(FileNotFoundError):
+            await get_file_history("nonexistent.py")
+
+    @pytest.mark.asyncio
+    async def test_get_file_history_python_lt_39_fallback(self, mock_settings):
+        """Test get_file_history with Python < 3.9 fallback."""
+        test_file = mock_settings.project_root / "test.py"
+        test_file.write_text("# test")
+
+        with patch("council.tools.git_tools._run_git_command") as mock_run:
+            mock_run.side_effect = [
+                ("hash1|author1|date1|message1", ""),
+                ("stat1", ""),
+            ]
+
+            # Mock is_relative_to to raise AttributeError (Python < 3.9)
+            resolved_path = MagicMock()
+            resolved_path.exists.return_value = True
+            resolved_path.is_relative_to.side_effect = AttributeError()
+            # Make str() work on the mock - return the actual file path string
+            type(resolved_path).__str__ = property(lambda _: str(test_file))
+
+            with patch("council.tools.git_tools.resolve_file_path", return_value=resolved_path):
+                result = await get_file_history(str(test_file), limit=1)
+                assert len(result) == 1
+
+    @pytest.mark.asyncio
+    async def test_get_file_history_empty_line_skipped(self, mock_settings):
+        """Test get_file_history skips empty lines."""
+        test_file = mock_settings.project_root / "test.py"
+        test_file.write_text("# test")
+
+        with patch("council.tools.git_tools._run_git_command") as mock_run:
+            # Include empty line in output - limit is applied before parsing, so we get 2 commits
+            mock_run.side_effect = [
+                ("hash1|author1|date1|message1\nhash2|author2|date2|message2", ""),
+                ("stat1", ""),
+                ("stat2", ""),
+            ]
+            result = await get_file_history(str(test_file), limit=2)
+            # Should get 2 results (limit applied to lines)
+            assert len(result) == 2
+
+    @pytest.mark.asyncio
+    async def test_get_file_history_exception_handling(self, mock_settings):
+        """Test get_file_history exception handling."""
+        test_file = mock_settings.project_root / "test.py"
+        test_file.write_text("# test")
+
+        with (
+            patch(
+                "council.tools.git_tools._run_git_command",
+                side_effect=Exception("Unexpected error"),
+            ),
+            pytest.raises(RuntimeError, match="Failed to get file history"),
+        ):
+            await get_file_history(str(test_file))
+
+    @pytest.mark.asyncio
+    async def test_get_git_diff_python_lt_39_fallback(self, mock_settings):
+        """Test get_git_diff with Python < 3.9 fallback."""
+        test_file = mock_settings.project_root / "test.py"
+        test_file.write_text("# test")
+
+        with patch("council.tools.git_tools._run_git_command") as mock_run:
+            mock_run.side_effect = [
+                ("test.py", ""),  # ls-files success - file is tracked
+                ("diff content", ""),  # diff success
+            ]
+
+            # Mock path to simulate Python < 3.9 behavior (no is_relative_to)
+            resolved_path = MagicMock()
+            resolved_path.exists.return_value = True
+            resolved_path.is_relative_to.side_effect = AttributeError()
+            # Make str() work on the mock
+            resolved_path.__str__ = lambda _: str(test_file)
+
+            with patch("council.tools.git_tools.resolve_file_path", return_value=resolved_path):
+                result = await get_git_diff(str(test_file))
+                assert "diff content" in result
+
+    @pytest.mark.asyncio
+    async def test_get_git_diff_not_tracked(self, mock_settings):
+        """Test get_git_diff with file not tracked in git."""
+        test_file = mock_settings.project_root / "test.py"
+        test_file.write_text("# test")
+
+        with patch("council.tools.git_tools._run_git_command") as mock_run:
+            mock_run.side_effect = RuntimeError("File not tracked")
+            result = await get_git_diff(str(test_file))
+            assert "not tracked" in result.lower()
+
+    @pytest.mark.asyncio
+    async def test_get_git_diff_no_changes(self, mock_settings):
+        """Test get_git_diff with no changes."""
+        test_file = mock_settings.project_root / "test.py"
+        test_file.write_text("# test")
+
+        with patch("council.tools.git_tools._run_git_command") as mock_run:
+            mock_run.side_effect = [
+                ("", ""),  # ls-files success
+                ("", ""),  # diff returns empty
+            ]
+            result = await get_git_diff(str(test_file))
+            assert "no changes" in result.lower()
+
+    @pytest.mark.asyncio
+    async def test_get_git_diff_runtime_error_no_changes(self, mock_settings):
+        """Test get_git_diff with RuntimeError indicating no changes."""
+        test_file = mock_settings.project_root / "test.py"
+        test_file.write_text("# test")
+
+        with patch("council.tools.git_tools._run_git_command") as mock_run:
+            mock_run.side_effect = [
+                ("", ""),  # ls-files success
+                RuntimeError("no changes"),  # diff error with "no changes"
+            ]
+            result = await get_git_diff(str(test_file))
+            assert "no changes" in result.lower()
+
+    @pytest.mark.asyncio
+    async def test_get_git_diff_exception_handling(self, mock_settings):
+        """Test get_git_diff exception handling."""
+        test_file = mock_settings.project_root / "test.py"
+        test_file.write_text("# test")
+
+        with (
+            patch(
+                "council.tools.git_tools.resolve_file_path",
+                side_effect=Exception("Unexpected error"),
+            ),
+            pytest.raises(RuntimeError, match="Failed to get git diff"),
+        ):
+            await get_git_diff(str(test_file))
+
+    @pytest.mark.asyncio
+    async def test_get_uncommitted_files_exception_handling(self, mock_settings):  # noqa: ARG002
+        """Test get_uncommitted_files exception handling."""
+        with (
+            patch(
+                "council.tools.git_tools._run_git_command",
+                side_effect=Exception("Unexpected error"),
+            ),
+            pytest.raises(RuntimeError, match="Failed to get uncommitted files"),
+        ):
+            await get_uncommitted_files()
+
+    @pytest.mark.asyncio
+    async def test_run_git_command_default_timeout(self, mock_settings):  # noqa: ARG002
+        """Test _run_git_command with default timeout."""
+        from council.tools.git_tools import _run_git_command
+
+        with patch("council.tools.git_tools.run_command_safely") as mock_run:
+            mock_run.return_value = ("output", "", 0)
+            await _run_git_command(["git", "status"])
+            # Verify timeout was passed (should use settings.git_timeout)
+            assert mock_run.called
+            call_kwargs = mock_run.call_args[1]
+            assert "timeout" in call_kwargs

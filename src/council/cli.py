@@ -675,14 +675,18 @@ def review(
 
                 # If no specific paths were provided, use all uncommitted files
                 if not paths or len(paths) == 0 or paths == (settings.project_root,):
-                    # Use all uncommitted files directly
+                    # Use all uncommitted files directly, but filter out deleted files
                     filtered_files = [
-                        (project_root / path).resolve() for path in uncommitted_file_paths
+                        (project_root / path).resolve()
+                        for path in uncommitted_file_paths
+                        if (project_root / path).exists()
                     ]
                 else:
-                    # Filter files_to_review to only include uncommitted files
+                    # Filter files_to_review to only include uncommitted files that exist
                     filtered_files = [
-                        f for f in files_to_review if f.resolve() in uncommitted_paths
+                        f
+                        for f in files_to_review
+                        if f.resolve() in uncommitted_paths and f.exists()
                     ]
 
                 if not filtered_files:
