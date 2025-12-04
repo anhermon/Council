@@ -272,11 +272,14 @@ def _analyze_imports_treesitter(
             captures = cursor.captures(tree.root_node)
 
             # captures is a dict: {'capture_name': [Node, Node, ...]})
-            all_nodes = []
-            for nodes_list in captures.values():
-                all_nodes.extend(nodes_list)
+            # Only process source/path/import captures, not function identifiers
+            source_captures = []
+            for capture_name, nodes_list in captures.items():
+                # Skip function identifier captures (like @func for require)
+                if capture_name in ("source", "path", "import"):
+                    source_captures.extend(nodes_list)
 
-            for node in all_nodes:
+            for node in source_captures:
                 text = content[node.start_byte : node.end_byte]
                 # Clean up quotes
                 clean_text = text.strip("'\"")
