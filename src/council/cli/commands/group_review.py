@@ -202,34 +202,51 @@ async def run_review(file_path: Path) -> dict[str, Any]:
 
         if result.returncode == 0:
             # Extract JSON from stdout - it might have log messages before it
-            stdout_lines = result.stdout.strip().split("\n")
-            json_lines = []
-            in_json = False
+            stdout_text = result.stdout.strip()
 
-            for line in stdout_lines:
-                # Look for start of JSON (starts with { or [)
-                if line.strip().startswith(("{", "[")):
-                    in_json = True
-                if in_json:
-                    json_lines.append(line)
+            # Try to find JSON in the output - look for the first { or [
+            json_start = -1
+            for i, char in enumerate(stdout_text):
+                if char in ("{", "["):
+                    json_start = i
+                    break
 
-            json_text = "\n".join(json_lines) if json_lines else result.stdout.strip()
-
-            try:
-                review_data = json.loads(json_text)
-                return {
-                    "file": str(file_path),
-                    "success": True,
-                    "review": review_data,
-                    "error": None,
-                }
-            except json.JSONDecodeError as e:
+            if json_start == -1:
                 return {
                     "file": str(file_path),
                     "success": False,
                     "review": None,
-                    "error": f"Failed to parse review JSON: {str(e)}. Output: {json_text[:200]}",
+                    "error": "No JSON found in output",
                 }
+
+            # Extract from the start of JSON to the end
+            json_text = stdout_text[json_start:]
+
+            # Try to parse the JSON, handling potential trailing text
+            # Find the matching closing brace/bracket
+            try:
+                # Use json.JSONDecoder to find where valid JSON ends
+                decoder = json.JSONDecoder()
+                json_data, idx = decoder.raw_decode(json_text)
+                review_data = json_data
+            except json.JSONDecodeError:
+                # Fallback: try parsing the whole thing
+                try:
+                    review_data = json.loads(json_text)
+                except json.JSONDecodeError as e:
+                    return {
+                        "file": str(file_path),
+                        "success": False,
+                        "review": None,
+                        "error": f"Failed to parse review JSON: {str(e)}. Output preview: {json_text[:500]}",
+                    }
+
+            return {
+                "file": str(file_path),
+                "success": True,
+                "review": review_data,
+                "error": None,
+            }
         else:
             error_msg = result.stderr or result.stdout or "Unknown error"
             return {
@@ -352,6 +369,16 @@ def group_review(
     if output_dir is None:
         output_dir = project_root / ".council" / "contexts"
     output_dir.mkdir(parents=True, exist_ok=True)
+
+    # Validate output directory is writable
+    try:
+        test_file = output_dir / ".write_test"
+        test_file.write_text("test")
+        test_file.unlink()
+    except (PermissionError, OSError) as e:
+        click.echo(f"❌ Output directory is not writable: {output_dir}", err=True)
+        click.echo(f"   Error: {e}", err=True)
+        sys.exit(1)
 
     # Generate contexts for each group
     async def _generate_contexts() -> dict[str, Any]:
