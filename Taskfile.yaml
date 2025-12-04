@@ -222,11 +222,13 @@ tasks:
         FILE_PATH="{{.FILE_PATH}}"
         PROMPT="{{.PROMPT}}"
         OUTPUT_FILE="{{.CONTEXT_DIR}}/$(basename "$FILE_PATH" | sed 's/\.[^.]*$//')_context.md"
+        ABS_OUTPUT_FILE="$(pwd)/$OUTPUT_FILE"
         echo "📦 Generating context for $FILE_PATH..."
         {{.COUNCIL_CMD}} context "$FILE_PATH" --output markdown > "$OUTPUT_FILE"
         echo "✅ Context generated: $OUTPUT_FILE"
         echo "🤖 Running Cursor Agent with context..."
-        cursor-agent -p "Please review the code context in $OUTPUT_FILE. $PROMPT"
+        echo "Note: Make sure you're authenticated with 'cursor-agent login' if needed"
+        cursor-agent -p "Please read and review the code context file at $ABS_OUTPUT_FILE. $PROMPT"
     vars:
       FILE_PATH: '{{default "src/council/main.py" .FILE_PATH}}'
       PROMPT: '{{default "Review this code and provide feedback." .PROMPT}}'
@@ -265,12 +267,15 @@ tasks:
         FILES="{{.FILES}}"
         PROMPT="{{.PROMPT}}"
         OUTPUT_FILES=""
+        ABS_OUTPUT_FILES=""
         for FILE in $FILES; do
           OUTPUT_FILE="{{.CONTEXT_DIR}}/$(basename "$FILE" | sed 's/\.[^.]*$//')_context.md"
+          ABS_OUTPUT_FILE="$(pwd)/$OUTPUT_FILE"
           echo "📦 Generating context for $FILE..."
           {{.COUNCIL_CMD}} context "$FILE" --output markdown > "$OUTPUT_FILE" 2>/dev/null || true
           if [ -s "$OUTPUT_FILE" ]; then
             OUTPUT_FILES="$OUTPUT_FILES $OUTPUT_FILE"
+            ABS_OUTPUT_FILES="$ABS_OUTPUT_FILES $ABS_OUTPUT_FILE"
             echo "✅ Context generated: $OUTPUT_FILE"
           else
             echo "⚠️  Failed to generate context for $FILE"
@@ -278,8 +283,8 @@ tasks:
         done
         if [ -n "$OUTPUT_FILES" ]; then
           echo "🤖 Running Cursor Agent with context files..."
-          FILE_LIST=$(echo "$OUTPUT_FILES" | tr ' ' '\n' | sed 's|^|@|')
-          cursor-agent -p "Please review the code contexts in these files: $OUTPUT_FILES. $PROMPT"
+          echo "Note: Make sure you're authenticated with 'cursor-agent login' if needed"
+          cursor-agent -p "Please read and review the code context files: $ABS_OUTPUT_FILES. $PROMPT"
         else
           echo "❌ No context files generated"
         fi
@@ -324,23 +329,27 @@ tasks:
         LIMIT="{{.LIMIT}}"
         PROMPT="{{.PROMPT}}"
         OUTPUT_FILES=""
+        ABS_OUTPUT_FILES=""
         COUNT=0
         for FILE in $(find src -name "*.py" -type f); do
           if [ "$COUNT" -ge "$LIMIT" ]; then
             break
           fi
           OUTPUT_FILE="{{.CONTEXT_DIR}}/$(echo "$FILE" | tr '/' '_' | sed 's/\.py$/_context.md/')"
+          ABS_OUTPUT_FILE="$(pwd)/$OUTPUT_FILE"
           echo "📦 Generating context for $FILE... ($((COUNT+1))/$LIMIT)"
           {{.COUNCIL_CMD}} context "$FILE" --output markdown > "$OUTPUT_FILE" 2>/dev/null || true
           if [ -s "$OUTPUT_FILE" ]; then
             OUTPUT_FILES="$OUTPUT_FILES $OUTPUT_FILE"
+            ABS_OUTPUT_FILES="$ABS_OUTPUT_FILES $ABS_OUTPUT_FILE"
             echo "✅ Context generated: $OUTPUT_FILE"
             COUNT=$((COUNT+1))
           fi
         done
         if [ -n "$OUTPUT_FILES" ]; then
           echo "🤖 Running Cursor Agent with $COUNT context file(s)..."
-          cursor-agent -p "Please review the code contexts in these files: $OUTPUT_FILES. $PROMPT"
+          echo "Note: Make sure you're authenticated with 'cursor-agent login' if needed"
+          cursor-agent -p "Please read and review the code context files in .council/context/ directory. $PROMPT"
         else
           echo "❌ No context files generated"
         fi
@@ -371,11 +380,13 @@ tasks:
         BASE_REF="{{.BASE_REF}}"
         PROMPT="{{.PROMPT}}"
         OUTPUT_FILE="{{.CONTEXT_DIR}}/$(basename "$FILE_PATH" | sed 's/\.[^.]*$//')_diff_${BASE_REF}_context.md"
+        ABS_OUTPUT_FILE="$(pwd)/$OUTPUT_FILE"
         echo "📦 Generating diff context for $FILE_PATH (base: $BASE_REF)..."
         {{.COUNCIL_CMD}} context "$FILE_PATH" --output markdown --diff "$BASE_REF" > "$OUTPUT_FILE"
         echo "✅ Diff context generated: $OUTPUT_FILE"
         echo "🤖 Running Cursor Agent with diff context..."
-        cursor-agent -p "Please review the diff context in $OUTPUT_FILE. $PROMPT"
+        echo "Note: Make sure you're authenticated with 'cursor-agent login' if needed"
+        cursor-agent -p "Please read and review the diff context file at $ABS_OUTPUT_FILE. $PROMPT"
     vars:
       FILE_PATH: '{{default "src/council/main.py" .FILE_PATH}}'
       BASE_REF: '{{default "HEAD" .BASE_REF}}'
@@ -404,11 +415,13 @@ tasks:
         INSTRUCTIONS="{{.INSTRUCTIONS}}"
         PROMPT="{{.PROMPT}}"
         OUTPUT_FILE="{{.CONTEXT_DIR}}/$(basename "$FILE_PATH" | sed 's/\.[^.]*$//')_custom_context.md"
+        ABS_OUTPUT_FILE="$(pwd)/$OUTPUT_FILE"
         echo "📦 Generating custom context for $FILE_PATH..."
         {{.COUNCIL_CMD}} context "$FILE_PATH" --output markdown --extra-instructions "$INSTRUCTIONS" > "$OUTPUT_FILE"
         echo "✅ Custom context generated: $OUTPUT_FILE"
         echo "🤖 Running Cursor Agent with custom context..."
-        cursor-agent -p "Please review the code context in $OUTPUT_FILE. $PROMPT"
+        echo "Note: Make sure you're authenticated with 'cursor-agent login' if needed"
+        cursor-agent -p "Please read and review the code context file at $ABS_OUTPUT_FILE. $PROMPT"
     vars:
       FILE_PATH: '{{default "src/council/main.py" .FILE_PATH}}'
       INSTRUCTIONS: '{{default "Focus on security and performance" .INSTRUCTIONS}}'
