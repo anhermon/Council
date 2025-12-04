@@ -22,6 +22,7 @@ wheels/
 *.pyc
 .coverage
 coverage.json
+coverage.xml
 htmlcov/
 instance/
 .tox/

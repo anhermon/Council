@@ -245,25 +245,30 @@ the-council/
 ├── pyproject.toml          # Dependencies and project config
 ├── .env                    # API keys (create this)
 ├── knowledge/              # Dynamic knowledge base (.md files)
-│   └── .keep
 ├── ai_docs/                # AI agent context documentation
 │   └── project_context.md  # Project mental map
 └── src/
     └── council/
         ├── __init__.py
         ├── main.py         # FastMCP server entry point
-        ├── cli.py          # CLI interface
         ├── config.py       # Settings & path constants
         ├── templates/
         │   └── system_prompt.j2  # Jinja2 template for system prompt
         ├── agents/
         │   ├── __init__.py
         │   └── councilor.py # Pydantic-AI reviewer agent
+        ├── cli/
+        │   ├── main.py     # CLI entry point
+        │   ├── commands/   # CLI commands (review, learn, context, housekeeping)
+        │   ├── core/       # Core review execution and context building
+        │   ├── ui/         # UI components (spinner, streaming, output)
+        │   └── utils/      # Utility functions (paths, errors, validation)
         └── tools/
             ├── __init__.py
             ├── scribe.py    # Jina Reader wrapper
-            ├── context.py   # Repomix wrapper
-            └── git_tools.py # Git integration tools
+            ├── repomix.py   # Repomix wrapper
+            ├── git_tools.py # Git integration tools
+            └── ...          # Additional analysis tools
 ```
 
 ## Development
@@ -282,10 +287,10 @@ The project uses Ruff for linting and formatting:
 
 ```bash
 # Check and fix issues
-uv run ruff check --fix src/
+uv run ruff check --fix src/ tests/
 
 # Format code
-uv run ruff format src/
+uv run ruff format src/ tests/
 ```
 
 ### Running Tests
