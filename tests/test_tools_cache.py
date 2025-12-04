@@ -118,9 +118,9 @@ class TestGetCachedReview:
         assert result is None
 
     @pytest.mark.asyncio
-    async def test_cache_hit(self, tmp_path):
+    async def test_cache_hit(self, mock_settings):
         """Test successful cache retrieval."""
-        test_file = tmp_path / "test.py"
+        test_file = mock_settings.project_root / "test.py"
         test_file.write_text("# test")
         # First cache a result
         test_result = {"summary": "test", "issues": []}
@@ -130,9 +130,9 @@ class TestGetCachedReview:
         assert cached == test_result
 
     @pytest.mark.asyncio
-    async def test_cache_miss_on_file_change(self, tmp_path):
+    async def test_cache_miss_on_file_change(self, mock_settings):
         """Test cache miss when file changes."""
-        test_file = tmp_path / "test.py"
+        test_file = mock_settings.project_root / "test.py"
         test_file.write_text("# original")
         test_result = {"summary": "test", "issues": []}
         await cache_review(str(test_file), test_result)
@@ -142,9 +142,9 @@ class TestGetCachedReview:
         assert cached is None
 
     @pytest.mark.asyncio
-    async def test_cache_with_model(self, tmp_path):
+    async def test_cache_with_model(self, mock_settings):
         """Test cache with model name."""
-        test_file = tmp_path / "test.py"
+        test_file = mock_settings.project_root / "test.py"
         test_file.write_text("# test")
         result1 = {"summary": "result1"}
         result2 = {"summary": "result2"}
@@ -160,9 +160,9 @@ class TestCacheReview:
     """Test cache_review function."""
 
     @pytest.mark.asyncio
-    async def test_cache_review(self, tmp_path):
+    async def test_cache_review(self, mock_settings):
         """Test caching a review result."""
-        test_file = tmp_path / "test.py"
+        test_file = mock_settings.project_root / "test.py"
         test_file.write_text("# test")
         result = {"summary": "test review", "issues": [{"line": 1, "message": "test"}]}
         await cache_review(str(test_file), result)
@@ -176,9 +176,9 @@ class TestCacheReview:
         assert cache_data["version"] == 1
 
     @pytest.mark.asyncio
-    async def test_cache_review_with_model(self, tmp_path):
+    async def test_cache_review_with_model(self, mock_settings):
         """Test caching with model name."""
-        test_file = tmp_path / "test.py"
+        test_file = mock_settings.project_root / "test.py"
         test_file.write_text("# test")
         result = {"summary": "test"}
         await cache_review(str(test_file), result, model_name="gpt-4")
@@ -193,9 +193,9 @@ class TestClearCache:
     """Test clear_cache function."""
 
     @pytest.mark.asyncio
-    async def test_clear_specific_file_cache(self, tmp_path):
+    async def test_clear_specific_file_cache(self, mock_settings):
         """Test clearing cache for specific file."""
-        test_file = tmp_path / "test.py"
+        test_file = mock_settings.project_root / "test.py"
         test_file.write_text("# test")
         result = {"summary": "test"}
         await cache_review(str(test_file), result)
@@ -207,11 +207,11 @@ class TestClearCache:
         assert cached is None
 
     @pytest.mark.asyncio
-    async def test_clear_all_cache(self, tmp_path):
+    async def test_clear_all_cache(self, mock_settings):
         """Test clearing all cache."""
         # Create multiple cached files
         for i in range(3):
-            test_file = tmp_path / f"test{i}.py"
+            test_file = mock_settings.project_root / f"test{i}.py"
             test_file.write_text(f"# test {i}")
             await cache_review(str(test_file), {"summary": f"test {i}"})
         # Clear all

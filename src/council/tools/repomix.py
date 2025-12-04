@@ -359,6 +359,7 @@ async def get_packed_diff(file_path: str, base_ref: str = "HEAD") -> str:
     project_root = settings.project_root.resolve()
 
     # Get list of changed files from git diff
+    # If git diff fails or times out, fallback to full context extraction
     try:
         # Get relative path
         try:
@@ -387,25 +388,21 @@ async def get_packed_diff(file_path: str, base_ref: str = "HEAD") -> str:
 
             if return_code != 0:
                 error_msg = stderr or "Unknown error"
-                logfire.error("Git diff failed", error=error_msg, return_code=return_code)
-                raise RepomixError(
-                    f"Git diff failed with return code {return_code}: {error_msg}. "
-                    "Cannot perform diff-based review. Use regular context extraction instead.",
-                    original_error=SubprocessError(
-                        "Git diff command failed",
-                        command=["git", "diff", "--name-only", base_ref, "--", rel_path],
-                        return_code=return_code,
-                        stderr=stderr,
-                    ),
+                logfire.warning(
+                    "Git diff failed, falling back to full context extraction",
+                    error=error_msg,
+                    return_code=return_code,
                 )
+                # Fallback to full context extraction
+                return await get_packed_context(file_path)
 
             changed_files = stdout.strip().split("\n")
-        except TimeoutError as e:
-            logfire.error("Git diff timed out", timeout=60.0)
-            raise RepomixTimeoutError(
-                "Git diff timed out after 60 seconds. Cannot perform diff-based review.",
-                original_error=e,
-            ) from e
+        except TimeoutError:
+            logfire.warning(
+                "Git diff timed out, falling back to full context extraction", timeout=60.0
+            )
+            # Fallback to full context extraction
+            return await get_packed_context(file_path)
 
         changed_files = [f for f in changed_files if f.strip()]
 
@@ -539,13 +536,24 @@ async def get_packed_diff(file_path: str, base_ref: str = "HEAD") -> str:
                 with contextlib.suppress(Exception):
                     output_path.unlink(missing_ok=True)
 
-    except (PathValidationError, FileNotFoundError, RepomixError, RepomixTimeoutError):
-        # Re-raise specific exceptions that shouldn't fall back
+    except (PathValidationError, FileNotFoundError):
+        # Re-raise validation and file not found errors
         raise
+    except (RepomixError, RepomixTimeoutError) as e:
+        # If Repomix itself fails, fallback to full context extraction
+        logfire.warning(
+            "Repomix diff extraction failed, falling back to full context", error=str(e)
+        )
+        return await get_packed_context(file_path)
     except Exception as e:
-        # Wrap unexpected errors instead of silently falling back
-        logfire.error("Unexpected error during diff extraction", error=str(e), exc_info=True)
-        raise RepomixError(
-            f"Unexpected error during diff extraction: {str(e)}",
-            original_error=e,
-        ) from e
+        # For other unexpected errors, try fallback before giving up
+        logfire.warning("Unexpected error during diff extraction, falling back", error=str(e))
+        try:
+            return await get_packed_context(file_path)
+        except Exception as fallback_error:
+            # If fallback also fails, raise original error
+            logfire.error("Fallback to full context also failed", error=str(fallback_error))
+            raise RepomixError(
+                f"Diff extraction failed and fallback failed: {str(e)}",
+                original_error=e,
+            ) from e

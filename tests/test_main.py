@@ -35,10 +35,10 @@ class TestReviewCode:
         assert result.error is not None
 
     @pytest.mark.asyncio
-    async def test_review_code_success(self, _tmp_path, _mock_settings):
+    async def test_review_code_success(self, mock_settings):
         """Test successful review_code execution."""
         # Use a path within the mock project root
-        test_file = _mock_settings.project_root / "test.py"
+        test_file = mock_settings.project_root / "test.py"
         test_file.write_text("# test code")
         file_path_str = str(test_file)
 
@@ -70,9 +70,9 @@ class TestReviewCode:
             assert result.summary == "Test summary"
 
     @pytest.mark.asyncio
-    async def test_review_code_timeout(self, _tmp_path, _mock_settings):
+    async def test_review_code_timeout(self, mock_settings):
         """Test review_code with timeout."""
-        test_file = _tmp_path / "test.py"
+        test_file = mock_settings.project_root / "test.py"
         test_file.write_text("# test code")
 
         with (
@@ -87,10 +87,10 @@ class TestReviewCode:
             assert "timeout" in result.error.lower() or "timed out" in result.error.lower()
 
     @pytest.mark.asyncio
-    async def test_review_code_with_base_ref(self, _tmp_path, _mock_settings):
+    async def test_review_code_with_base_ref(self, mock_settings):
         """Test review_code with base_ref parameter."""
         # Use a path within the mock project root
-        test_file = _mock_settings.project_root / "test.py"
+        test_file = mock_settings.project_root / "test.py"
         test_file.write_text("# test code")
         file_path_str = str(test_file)
 
@@ -122,9 +122,9 @@ class TestReviewCode:
             mock_diff.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_review_code_large_content(self, _tmp_path, _mock_settings):
+    async def test_review_code_large_content(self, mock_settings):
         """Test review_code with content exceeding size limit."""
-        test_file = _tmp_path / "test.py"
+        test_file = mock_settings.project_root / "test.py"
         test_file.write_text("# test code")
 
         large_content = "x" * (11 * 1024 * 1024)  # 11MB, exceeding 10MB limit
@@ -141,9 +141,9 @@ class TestReviewCode:
             assert "large" in result.error.lower() or "size" in result.error.lower()
 
     @pytest.mark.asyncio
-    async def test_review_code_agent_timeout(self, _tmp_path, _mock_settings):
+    async def test_review_code_agent_timeout(self, mock_settings):
         """Test review_code when agent execution times out."""
-        test_file = _tmp_path / "test.py"
+        test_file = mock_settings.project_root / "test.py"
         test_file.write_text("# test code")
 
         mock_agent = MagicMock()
@@ -162,9 +162,9 @@ class TestReviewCode:
             assert "timeout" in result.error.lower() or "timed out" in result.error.lower()
 
     @pytest.mark.asyncio
-    async def test_review_code_agent_validation_error(self, _tmp_path, _mock_settings):
+    async def test_review_code_agent_validation_error(self, mock_settings):
         """Test review_code with agent validation error."""
-        test_file = _tmp_path / "test.py"
+        test_file = mock_settings.project_root / "test.py"
         test_file.write_text("# test code")
 
         mock_agent = MagicMock()

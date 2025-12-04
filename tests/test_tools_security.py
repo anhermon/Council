@@ -27,20 +27,13 @@ class TestScanSecurityVulnerabilities:
             ]
         }
 
-        with patch("asyncio.create_subprocess_exec") as mock_subprocess:
-            # Mock version check
-            mock_version_proc = MagicMock()
-            mock_version_proc.wait = AsyncMock(return_value=None)
-            mock_version_proc.returncode = 0
-
-            # Mock bandit scan
-            mock_scan_proc = MagicMock()
-            mock_scan_proc.communicate = AsyncMock(
-                return_value=(str(mock_bandit_json).replace("'", '"').encode(), b"", 0)
-            )
-            mock_scan_proc.returncode = 0
-
-            mock_subprocess.side_effect = [mock_version_proc, mock_scan_proc]
+        with patch("council.tools.security.run_command_safely") as mock_run:
+            # Mock version check (returns success)
+            # Mock bandit scan (returns JSON results)
+            mock_run.side_effect = [
+                ("bandit 1.7.0", "", 0),  # Version check succeeds
+                (str(mock_bandit_json).replace("'", '"'), "", 0),  # Scan succeeds
+            ]
 
             result = await scan_security_vulnerabilities(str(test_file))
             assert "bandit" in result
@@ -56,7 +49,7 @@ class TestScanSecurityVulnerabilities:
         with patch("asyncio.create_subprocess_exec") as mock_subprocess:
             # Mock version checks failing (tools not available)
             mock_proc = MagicMock()
-            mock_proc.wait = AsyncMock(return_value=None)
+            mock_proc.communicate = AsyncMock(return_value=(b"", b"command not found", 1))
             mock_proc.returncode = 1  # Tool not found
 
             mock_subprocess.return_value = mock_proc
@@ -77,7 +70,7 @@ class TestScanSecurityVulnerabilities:
         with patch("asyncio.create_subprocess_exec") as mock_subprocess:
             # Mock version check
             mock_version_proc = MagicMock()
-            mock_version_proc.wait = AsyncMock(return_value=None)
+            mock_version_proc.communicate = AsyncMock(return_value=(b"semgrep 1.0.0", b"", 0))
             mock_version_proc.returncode = 0
 
             # Mock semgrep scan
@@ -103,7 +96,7 @@ class TestScanSecurityVulnerabilities:
 
         with patch("asyncio.create_subprocess_exec") as mock_subprocess:
             mock_proc = MagicMock()
-            mock_proc.wait = AsyncMock(return_value=None)
+            mock_proc.communicate = AsyncMock(return_value=(b"", b"command not found", 1))
             mock_proc.returncode = 1  # Tools not available
 
             mock_subprocess.return_value = mock_proc
@@ -120,7 +113,7 @@ class TestScanSecurityVulnerabilities:
         with patch("asyncio.create_subprocess_exec") as mock_subprocess:
             # Only semgrep should run (bandit is Python-only)
             mock_version_proc = MagicMock()
-            mock_version_proc.wait = AsyncMock(return_value=None)
+            mock_version_proc.communicate = AsyncMock(return_value=(b"semgrep 1.0.0", b"", 0))
             mock_version_proc.returncode = 0
 
             mock_subprocess.return_value = mock_version_proc
@@ -144,7 +137,7 @@ class TestScanSecurityVulnerabilities:
         with patch("asyncio.create_subprocess_exec") as mock_subprocess:
             # Mock version check
             mock_version_proc = MagicMock()
-            mock_version_proc.wait = AsyncMock(return_value=None)
+            mock_version_proc.communicate = AsyncMock(return_value=(b"bandit 1.7.0", b"", 0))
             mock_version_proc.returncode = 0
 
             # Mock bandit scan with invalid JSON
@@ -164,23 +157,22 @@ class TestScanSecurityVulnerabilities:
         test_file = mock_settings.project_root / "test.py"
         test_file.write_text("# code")
 
-        with patch("asyncio.create_subprocess_exec") as mock_subprocess:
-            # Mock version check
-            mock_version_proc = MagicMock()
-            mock_version_proc.wait = AsyncMock(return_value=None)
-            mock_version_proc.returncode = 0
+        from council.tools.exceptions import SubprocessTimeoutError
 
+        with patch("council.tools.security.run_command_safely") as mock_run:
+            # Mock version check (returns success)
             # Mock scan that times out
-            mock_scan_proc = MagicMock()
-            mock_scan_proc.communicate = AsyncMock(side_effect=TimeoutError("Timeout"))
-
-            mock_subprocess.side_effect = [mock_version_proc, mock_scan_proc]
+            mock_run.side_effect = [
+                ("bandit 1.7.0", "", 0),  # Version check succeeds
+                SubprocessTimeoutError("Command timed out", command=["bandit"]),  # Scan times out
+            ]
 
             # Should handle timeout gracefully (exception is caught and logged)
             result = await scan_security_vulnerabilities(str(test_file))
             # Timeout should be caught and result should contain error info
             assert "bandit" in result
-            assert "error" in result.get("bandit", {})
+            assert result["bandit"] is not None
+            assert "error" in result["bandit"]
 
     @pytest.mark.asyncio
     async def test_scan_with_base_path(self, tmp_path):
@@ -190,7 +182,7 @@ class TestScanSecurityVulnerabilities:
 
         with patch("asyncio.create_subprocess_exec") as mock_subprocess:
             mock_proc = MagicMock()
-            mock_proc.wait = AsyncMock(return_value=None)
+            mock_proc.communicate = AsyncMock(return_value=(b"", b"command not found", 1))
             mock_proc.returncode = 1
 
             mock_subprocess.return_value = mock_proc
@@ -209,7 +201,7 @@ class TestScanSecurityVulnerabilities:
 
         with patch("asyncio.create_subprocess_exec") as mock_subprocess:
             mock_version_proc = MagicMock()
-            mock_version_proc.wait = AsyncMock(return_value=None)
+            mock_version_proc.communicate = AsyncMock(return_value=(b"bandit 1.7.0", b"", 0))
             mock_version_proc.returncode = 0
 
             mock_scan_proc = MagicMock()
@@ -230,7 +222,7 @@ class TestScanSecurityVulnerabilities:
 
         with patch("asyncio.create_subprocess_exec") as mock_subprocess:
             mock_version_proc = MagicMock()
-            mock_version_proc.wait = AsyncMock(return_value=None)
+            mock_version_proc.communicate = AsyncMock(return_value=(b"bandit 1.7.0", b"", 0))
             mock_version_proc.returncode = 0
 
             # Mock bandit scan that raises exception

@@ -267,11 +267,9 @@ class CouncilDeps:
                     project_root=str(settings.project_root),
                 )
 
-        # Validate extra_instructions length
+        # Validate and truncate extra_instructions length
         if self.extra_instructions and len(self.extra_instructions) > MAX_EXTRA_INSTRUCTIONS_LENGTH:
-            raise ValueError(
-                f"extra_instructions exceeds maximum length of {MAX_EXTRA_INSTRUCTIONS_LENGTH}"
-            )
+            self.extra_instructions = self.extra_instructions[:MAX_EXTRA_INSTRUCTIONS_LENGTH]
 
         # Validate review_phases
         if self.review_phases:
@@ -476,9 +474,12 @@ def _validate_extra_instructions(extra_instructions: str | None) -> str | None:
     """
     Validate and sanitize extra instructions.
 
-    Note: Length validation is already performed in CouncilDeps.__post_init__(),
-    so this function only handles None checks and returns the value as-is.
+    Truncates to MAX_EXTRA_INSTRUCTIONS_LENGTH if too long.
     """
+    if extra_instructions is None:
+        return None
+    if len(extra_instructions) > MAX_EXTRA_INSTRUCTIONS_LENGTH:
+        return extra_instructions[:MAX_EXTRA_INSTRUCTIONS_LENGTH]
     return extra_instructions
 
 

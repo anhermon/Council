@@ -128,9 +128,9 @@ uv run council learn "https://docs.anthropic.com/en/docs/build-with-claude/promp
 ```
 
 #### Get Context
-Output review context for external agents (useful for using other AI models):
+Output review context for external agents (useful for using other AI models). Can focus on specific review phases (security, performance, maintainability, best_practices):
 ```bash
-uv run council context <file_path> [--output json|markdown] [--diff <ref>] [--extra-instructions "instructions"]
+uv run council context <file_path> [--output json|markdown] [--diff <ref>] [--extra-instructions "instructions"] [--phases "phase1,phase2"]
 ```
 
 **Examples:**
@@ -146,6 +146,9 @@ uv run council context src/council/main.py --diff HEAD
 
 # Get context with extra instructions
 uv run council context src/council/main.py --extra-instructions "Focus on security"
+
+# Get context focused on specific review phases
+uv run council context src/council/main.py --phases security,performance
 ```
 
 #### Run MCP Server

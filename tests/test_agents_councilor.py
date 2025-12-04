@@ -102,8 +102,10 @@ class TestCouncilDeps:
     def test_council_deps_long_instructions(self):
         """Test CouncilDeps with instructions exceeding limit."""
         long_instructions = "x" * 10001
-        with pytest.raises(ValueError, match="exceeds maximum length"):
-            CouncilDeps(file_path="test.py", extra_instructions=long_instructions)
+        deps = CouncilDeps(file_path="test.py", extra_instructions=long_instructions)
+        # Should be truncated to MAX_EXTRA_INSTRUCTIONS_LENGTH
+        assert len(deps.extra_instructions) == 10000
+        assert deps.extra_instructions == long_instructions[:10000]
 
     def test_council_deps_with_review_phases(self):
         """Test CouncilDeps with review phases."""
@@ -272,11 +274,8 @@ class TestGetCouncilorAgent:
         """Test that get_councilor_agent creates an agent."""
         from council.agents.councilor import get_councilor_agent
 
-        # Mock MODEL_NAME to avoid requiring actual API key
-        with (
-            patch("council.agents.councilor.MODEL_NAME", "test-model"),
-            patch("council.agents.councilor._create_model") as mock_create,
-        ):
+        # Mock _create_model to avoid requiring actual API key
+        with patch("council.agents.councilor._create_model") as mock_create:
             mock_model = MagicMock()
             mock_create.return_value = mock_model
 
@@ -292,10 +291,7 @@ class TestGetCouncilorAgent:
         """Test that get_councilor_agent returns singleton."""
         from council.agents.councilor import get_councilor_agent
 
-        with (
-            patch("council.agents.councilor.MODEL_NAME", "test-model"),
-            patch("council.agents.councilor._create_model") as mock_create,
-        ):
+        with patch("council.agents.councilor._create_model") as mock_create:
             mock_model = MagicMock()
             mock_create.return_value = mock_model
 
@@ -316,7 +312,6 @@ class TestGetCouncilorAgent:
         councilor_module._councilor_agent = None
 
         with (
-            patch("council.agents.councilor.MODEL_NAME", "test-model"),
             patch(
                 "council.agents.councilor._create_model",
                 side_effect=RuntimeError("Model creation failed"),
@@ -360,11 +355,11 @@ class TestCreateModel:
     """Test _create_model function."""
 
     def test_create_model_no_model_name(self):
-        """Test _create_model without MODEL_NAME."""
+        """Test _create_model without model name."""
         from council.agents.councilor import _create_model
 
         with (
-            patch("council.agents.councilor.MODEL_NAME", None),
+            patch("council.agents.councilor._get_model_name", return_value=None),
             pytest.raises(RuntimeError, match="COUNCIL_MODEL environment variable is required"),
         ):
             _create_model()
@@ -376,7 +371,7 @@ class TestCreateModel:
         from council.agents.councilor import _create_model
 
         with (
-            patch("council.agents.councilor.MODEL_NAME", "test-model"),
+            patch("council.agents.councilor._get_model_name", return_value="test-model"),
             patch("council.agents.councilor.settings") as mock_settings,
         ):
             mock_settings.litellm_base_url = "https://api.example.com"
@@ -391,7 +386,7 @@ class TestCreateModel:
         from council.agents.councilor import _create_model
 
         with (
-            patch("council.agents.councilor.MODEL_NAME", "gpt-4"),
+            patch("council.agents.councilor._get_model_name", return_value="gpt-4"),
             patch("council.agents.councilor.settings") as mock_settings,
         ):
             mock_settings.litellm_base_url = None
@@ -406,7 +401,10 @@ class TestCreateModel:
         from council.agents.councilor import _create_model
 
         with (
-            patch("council.agents.councilor.MODEL_NAME", "anthropic:claude-3-5-sonnet"),
+            patch(
+                "council.agents.councilor._get_model_name",
+                return_value="anthropic:claude-3-5-sonnet",
+            ),
             patch("council.agents.councilor.settings") as mock_settings,
         ):
             mock_settings.litellm_base_url = None
@@ -421,7 +419,7 @@ class TestCreateModel:
         from council.agents.councilor import _create_model
 
         with (
-            patch("council.agents.councilor.MODEL_NAME", "test-model"),
+            patch("council.agents.councilor._get_model_name", return_value="test-model"),
             patch("council.agents.councilor.settings") as mock_settings,
         ):
             mock_settings.litellm_base_url = None
