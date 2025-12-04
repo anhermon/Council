@@ -322,7 +322,12 @@ def456|2024-01-02|Author Name|Add feature"""
             # Make str() work on the mock - return the full path string
             # The fallback code will extract the relative path
             test_file_str = str(test_file)
-            type(resolved_path).__str__ = property(lambda _: test_file_str)
+
+            # Configure __str__ to return the string directly (accepts self)
+            def mock_str(_):
+                return test_file_str
+
+            resolved_path.__str__ = mock_str
 
             with patch("council.tools.git_tools.resolve_file_path", return_value=resolved_path):
                 result = await get_file_history(str(test_file), limit=1)
@@ -379,7 +384,12 @@ def456|2024-01-02|Author Name|Add feature"""
             resolved_path.exists.return_value = True
             resolved_path.is_relative_to.side_effect = AttributeError()
             # Make str() work on the mock
-            type(resolved_path).__str__ = property(lambda _: str(test_file))
+            test_file_str = str(test_file)
+
+            def mock_str(_):
+                return test_file_str
+
+            resolved_path.__str__ = mock_str
 
             with patch("council.tools.git_tools.resolve_file_path", return_value=resolved_path):
                 result = await get_git_diff(str(test_file))
