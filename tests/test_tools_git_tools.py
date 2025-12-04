@@ -5,6 +5,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from council.tools.git_tools import (
+    MAX_HISTORY_LIMIT,
     get_file_history,
     get_git_diff,
     get_uncommitted_files,
@@ -21,10 +22,23 @@ class TestGetGitDiff:
         test_file.write_text("# test content")
 
         with patch("council.tools.git_tools._run_git_command") as mock_run:
-            mock_run.return_value = ("diff content", "")
+            mock_run.side_effect = [
+                ("test.py", ""),  # ls-files success
+                ("diff content", ""),  # diff success
+            ]
             result = await get_git_diff(str(test_file), base_ref="HEAD")
             assert result == "diff content"
-            assert mock_run.called
+            assert mock_run.call_count == 2
+            # Verify correct git commands were called
+            assert mock_run.call_args_list[0][0][0] == [
+                "git",
+                "ls-files",
+                "--error-unmatch",
+                "test.py",
+            ]
+            assert mock_run.call_args_list[1][0][0][0] == "git"
+            assert mock_run.call_args_list[1][0][0][1] == "diff"
+            assert "HEAD" in mock_run.call_args_list[1][0][0]
 
     @pytest.mark.asyncio
     async def test_get_git_diff_with_base_ref(self, mock_settings):
@@ -33,12 +47,19 @@ class TestGetGitDiff:
         test_file.write_text("# test")
 
         with patch("council.tools.git_tools._run_git_command") as mock_run:
-            mock_run.return_value = ("diff", "")
+            mock_run.side_effect = [
+                ("test.py", ""),  # ls-files success
+                ("diff", ""),  # diff success
+            ]
             result = await get_git_diff(str(test_file), base_ref="main")
             assert result == "diff"
             # Verify base_ref was used in command
-            call_args = mock_run.call_args[0][0]
-            assert "main" in call_args
+            assert mock_run.call_count == 2
+            diff_call = mock_run.call_args_list[1][0][0]
+            assert diff_call[0] == "git"
+            assert diff_call[1] == "diff"
+            assert "main" in diff_call
+            assert "test.py" in diff_call
 
     @pytest.mark.asyncio
     async def test_get_git_diff_nonexistent_file(self):
@@ -64,9 +85,14 @@ class TestGetGitDiff:
         test_file.write_text("# test")
 
         with patch("council.tools.git_tools._run_git_command") as mock_run:
-            mock_run.return_value = ("diff", "")
+            mock_run.side_effect = [
+                ("test.py", ""),  # ls-files success
+                ("diff", ""),  # diff success
+            ]
             result = await get_git_diff(str(test_file), base_path=str(tmp_path))
             assert result == "diff"
+            # Verify git commands were called
+            assert mock_run.call_count == 2
 
 
 class TestGetUncommittedFiles:
@@ -85,6 +111,16 @@ class TestGetUncommittedFiles:
             assert len(result) == 2
             assert "file1.py" in result
             assert "file2.py" in result
+            # Verify correct git commands were called
+            assert mock_run.call_count == 3
+            assert mock_run.call_args_list[0][0][0] == ["git", "diff", "--name-only"]
+            assert mock_run.call_args_list[1][0][0] == ["git", "diff", "--cached", "--name-only"]
+            assert mock_run.call_args_list[2][0][0] == [
+                "git",
+                "ls-files",
+                "--others",
+                "--exclude-standard",
+            ]
 
     @pytest.mark.asyncio
     async def test_get_uncommitted_files_empty(self):
@@ -149,6 +185,12 @@ def456|2024-01-02|Author Name|Add feature"""
             assert result[0]["hash"] == "abc123"[:8]
             assert result[0]["message"] == "Fix bug"
             assert result[1]["hash"] == "def456"[:8]
+            # Verify git log was called with correct parameters
+            assert mock_run.call_count >= 1
+            log_call = mock_run.call_args_list[0][0][0]
+            assert log_call[0] == "git"
+            assert log_call[1] == "log"
+            assert "-10" in log_call
 
     @pytest.mark.asyncio
     async def test_get_file_history_with_limit(self, mock_settings):
@@ -164,6 +206,12 @@ def456|2024-01-02|Author Name|Add feature"""
             ] + [("", "")] * 5  # git show for each commit
             result = await get_file_history(str(test_file), limit=3)
             assert len(result) <= 3
+            # Verify git log was called with correct limit
+            assert mock_run.call_count >= 1
+            log_call = mock_run.call_args_list[0][0][0]
+            assert log_call[0] == "git"
+            assert log_call[1] == "log"
+            assert "-3" in log_call
 
     @pytest.mark.asyncio
     async def test_get_file_history_empty(self, mock_settings):
@@ -171,8 +219,9 @@ def456|2024-01-02|Author Name|Add feature"""
         test_file = mock_settings.project_root / "test.py"
         test_file.write_text("# test")
 
-        with patch("council.tools.git_tools.run_command_safely") as mock_run:
-            mock_run.return_value = ("", "", 0)
+        with patch("council.tools.git_tools._run_git_command") as mock_run:
+            # Simulate RuntimeError for file not tracked or no history
+            mock_run.side_effect = RuntimeError("No history")
             result = await get_file_history(str(test_file))
             assert result == []
 
@@ -188,8 +237,10 @@ def456|2024-01-02|Author Name|Add feature"""
                 ("", ""),  # git show
             ]
             # Request more than max limit
-            with pytest.raises(ValueError):
-                await get_file_history(str(test_file), limit=200)
+            with pytest.raises(
+                ValueError, match=f"Limit must be between 1 and {MAX_HISTORY_LIMIT}"
+            ):
+                await get_file_history(str(test_file), limit=MAX_HISTORY_LIMIT + 1)
 
     @pytest.mark.asyncio
     async def test_get_file_history_with_base_path(self, tmp_path):
@@ -212,10 +263,12 @@ def456|2024-01-02|Author Name|Add feature"""
         test_file.write_text("# test")
 
         with patch("council.tools.git_tools._run_git_command") as mock_run:
+            # RuntimeError during git log should return empty list
             mock_run.side_effect = RuntimeError("Git command failed")
-            # Should return empty list on error
             result = await get_file_history(str(test_file))
             assert result == []
+            # Verify git log was attempted
+            assert mock_run.called
 
     @pytest.mark.asyncio
     async def test_get_file_history_timeout(self, mock_settings):
@@ -234,12 +287,15 @@ def456|2024-01-02|Author Name|Add feature"""
         test_file = mock_settings.project_root / "test.py"
         test_file.write_text("# test")
 
-        # Malformed output (missing fields)
-        with patch("council.tools.git_tools.run_command_safely") as mock_run:
-            mock_run.return_value = ("invalid|output", "", 0)
+        # Malformed output (missing fields - only 2 parts instead of 4+)
+        with patch("council.tools.git_tools._run_git_command") as mock_run:
+            mock_run.side_effect = [
+                ("invalid|output", ""),  # git log with malformed output
+            ]
             result = await get_file_history(str(test_file))
-            # Should handle gracefully, possibly returning empty or partial results
+            # Should handle gracefully - malformed lines are skipped
             assert isinstance(result, list)
+            assert len(result) == 0  # Malformed line should be skipped
 
     @pytest.mark.asyncio
     async def test_get_file_history_nonexistent_file(self, mock_settings):  # noqa: ARG002
@@ -263,12 +319,16 @@ def456|2024-01-02|Author Name|Add feature"""
             resolved_path = MagicMock()
             resolved_path.exists.return_value = True
             resolved_path.is_relative_to.side_effect = AttributeError()
-            # Make str() work on the mock - return the actual file path string
-            type(resolved_path).__str__ = property(lambda _: str(test_file))
+            # Make str() work on the mock - return the full path string
+            # The fallback code will extract the relative path
+            test_file_str = str(test_file)
+            type(resolved_path).__str__ = property(lambda _: test_file_str)
 
             with patch("council.tools.git_tools.resolve_file_path", return_value=resolved_path):
                 result = await get_file_history(str(test_file), limit=1)
                 assert len(result) == 1
+                # Verify resolve_file_path was called
+                assert resolved_path.exists.called
 
     @pytest.mark.asyncio
     async def test_get_file_history_empty_line_skipped(self, mock_settings):
@@ -319,11 +379,21 @@ def456|2024-01-02|Author Name|Add feature"""
             resolved_path.exists.return_value = True
             resolved_path.is_relative_to.side_effect = AttributeError()
             # Make str() work on the mock
-            resolved_path.__str__ = lambda _: str(test_file)
+            type(resolved_path).__str__ = property(lambda _: str(test_file))
 
             with patch("council.tools.git_tools.resolve_file_path", return_value=resolved_path):
                 result = await get_git_diff(str(test_file))
                 assert "diff content" in result
+                # Verify correct git commands were called
+                assert mock_run.call_count == 2
+                assert mock_run.call_args_list[0][0][0] == [
+                    "git",
+                    "ls-files",
+                    "--error-unmatch",
+                    "test.py",
+                ]
+                assert mock_run.call_args_list[1][0][0][0] == "git"
+                assert mock_run.call_args_list[1][0][0][1] == "diff"
 
     @pytest.mark.asyncio
     async def test_get_git_diff_not_tracked(self, mock_settings):
