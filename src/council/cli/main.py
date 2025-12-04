@@ -5,6 +5,7 @@ import logfire
 
 from .. import __version__
 from .commands.context import context
+from .commands.group_review import group_review
 from .commands.housekeeping import housekeeping
 from .commands.learn import learn
 from .commands.review import review
@@ -24,6 +25,7 @@ def main() -> None:
 main.add_command(review)
 main.add_command(learn)
 main.add_command(context)
+main.add_command(group_review)
 main.add_command(housekeeping)
 
 __all__ = ["main"]

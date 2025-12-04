@@ -173,12 +173,11 @@ class Settings:
                             break
             except (ModuleNotFoundError, AttributeError, TypeError) as e:
                 # Log the specific error for debugging
-                # In production, you might want to use proper logging
-                import sys
+                import logfire
 
-                print(
-                    f"Warning: Could not resolve templates directory via importlib.resources: {e}",
-                    file=sys.stderr,
+                logfire.warning(
+                    "Could not resolve templates directory via importlib.resources",
+                    error=str(e),
                 )
                 # Keep the __file__ based path as fallback
 

@@ -205,7 +205,17 @@ def _create_review_checklist(language: str, review_phases: list[str] | None) -> 
     """
     checklist = """# Code Review Checklist
 
-You are performing a comprehensive code review. Follow this checklist to ensure a thorough review.
+**IMPORTANT: You are expected to perform a comprehensive code review based on the context provided below.**
+
+This document contains all the information you need to review the code:
+- The code to review (extracted with full context)
+- Relevant knowledge base content
+- System prompt with review guidelines
+- Database relations (if applicable)
+
+**Your task**: Analyze the code systematically and identify issues across security, performance, maintainability, best practices, and bugs/edge cases.
+
+Follow this checklist to ensure a thorough review.
 
 ## Review Process
 

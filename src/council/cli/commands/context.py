@@ -166,6 +166,11 @@ def _output_markdown(context_data: dict) -> None:
     timestamp = datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S UTC")
 
     click.echo("# Code Review Context\n")
+    click.echo("**⚠️ IMPORTANT: This context is intended for code review purposes.**\n")
+    click.echo(
+        "**The agent reading this output is expected to perform a comprehensive code review**\n"
+    )
+    click.echo("**based on the code, knowledge base, and guidelines provided below.**\n")
     click.echo(f"**Generated:** {timestamp}\n")
     click.echo(f"## File: {context_data['file_path']}\n")
     click.echo(f"**Language:** {context_data['language']}\n")
