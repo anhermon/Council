@@ -9,11 +9,11 @@ from pathlib import Path
 import logfire
 from jinja2 import Environment, FileSystemLoader, TemplateError
 from pydantic import BaseModel, Field
-from pydantic_ai import Agent, RunContext
+from pydantic_ai import Agent, RunContext, ToolDefinition
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.litellm import LiteLLMProvider
 
-from ..config import settings
+from ..config import get_settings
 from ..tools.architecture import analyze_architecture
 from ..tools.code_analysis import (
     analyze_imports,
@@ -22,16 +22,22 @@ from ..tools.code_analysis import (
     write_file,
     write_file_chunk,
 )
+from ..tools.debug import DebugWriter
 from ..tools.git_tools import get_file_history, get_git_diff
 from ..tools.metrics import calculate_complexity
 from ..tools.security import scan_security_vulnerabilities
 from ..tools.static_analysis import run_static_analysis
 from ..tools.testing import check_test_coverage, check_test_quality, find_related_tests
 
+settings = get_settings()
+
 # Resource limits for knowledge base files
 MAX_KNOWLEDGE_FILE_SIZE = 10 * 1024 * 1024  # 10MB per file
-MAX_KNOWLEDGE_FILES = 50  # Maximum number of knowledge files to load
 MAX_EXTRA_INSTRUCTIONS_LENGTH = 10000  # Maximum length for extra instructions
+
+# Thread-safe storage for debug writers (keyed by file_path)
+_debug_writers: dict[str, "DebugWriter"] = {}
+_debug_writers_lock = threading.Lock()
 
 # Determine model from environment variable (required)
 # Users must set COUNCIL_MODEL in their environment or .env file
@@ -117,6 +123,9 @@ EXTENSION_MAP = {
     ".tfvars": ["terraform"],
     ".hcl": ["hcl"],
     ".md": ["markdown"],
+    ".j2": ["jinja2", "python"],  # Jinja2 templates (often used with Python)
+    ".jinja": ["jinja2", "python"],
+    ".jinja2": ["jinja2", "python"],
 }
 
 
@@ -302,6 +311,71 @@ def _create_model() -> OpenAIChatModel | str:
         )
 
 
+# Tools that are only applicable to Python files
+PYTHON_ONLY_TOOLS = {
+    "analyze_imports",  # Only analyzes Python imports
+    "check_test_coverage",  # Python test coverage tools
+    "check_test_quality",  # Python test quality checks
+    "find_related_tests",  # Python test discovery
+}
+
+# Tools that are only applicable to code files (not templates/config files)
+CODE_ONLY_TOOLS = {
+    "run_static_analysis",  # Static analysis tools (ruff, mypy, pylint)
+    "calculate_complexity",  # Code complexity metrics
+}
+
+# Template/config file extensions that shouldn't use code analysis tools
+TEMPLATE_EXTENSIONS = {
+    ".j2",
+    ".jinja",
+    ".jinja2",
+    ".html",
+    ".xml",
+    ".yaml",
+    ".yml",
+    ".json",
+    ".toml",
+    ".ini",
+    ".cfg",
+    ".conf",
+}
+
+
+async def prepare_tools(
+    ctx: RunContext[CouncilDeps], tool_defs: list[ToolDefinition]
+) -> list[ToolDefinition] | None:
+    """
+    Filter tools based on file type being reviewed.
+
+    This prevents calling irrelevant tools (e.g., analyze_imports on Jinja templates).
+
+    Args:
+        ctx: Run context containing file path
+        tool_defs: List of available tool definitions
+
+    Returns:
+        Filtered list of tool definitions, or None to disable all tools
+    """
+    file_path = ctx.deps.file_path
+    if not file_path:
+        # If no file path, return all tools
+        return tool_defs
+
+    path = Path(file_path)
+    extension = path.suffix.lower()
+
+    # Filter out Python-only tools for non-Python files
+    if extension != ".py":
+        tool_defs = [td for td in tool_defs if td.name not in PYTHON_ONLY_TOOLS]
+
+    # Filter out code analysis tools for template/config files
+    if extension in TEMPLATE_EXTENSIONS:
+        tool_defs = [td for td in tool_defs if td.name not in CODE_ONLY_TOOLS]
+
+    return tool_defs
+
+
 # Create the agent with structured output (lazy initialization)
 # The agent will be created when first accessed
 _councilor_agent: Agent[CouncilDeps, ReviewResult] | None = None
@@ -338,6 +412,7 @@ def get_councilor_agent() -> Agent[CouncilDeps, ReviewResult]:
                             calculate_complexity,
                             analyze_architecture,
                         ],
+                        prepare_tools=prepare_tools,
                     )
                     # Register the system prompt function
                     _councilor_agent.system_prompt(add_dynamic_knowledge)
@@ -404,7 +479,7 @@ def detect_language(file_path: str) -> str:
     extension = path.suffix.lower()
 
     # Use EXTENSION_MAP to avoid code duplication
-    # Map some extensions to their language equivalents for backward compatibility
+    # Map some extensions to their language equivalents
     language_mapping = {
         ".jsx": "javascript",  # EXTENSION_MAP has "react" but detect_language should return "javascript"
         ".tsx": "typescript",  # EXTENSION_MAP has "react" but detect_language should return "typescript"
@@ -467,7 +542,7 @@ async def get_relevant_knowledge(file_paths: list[str]) -> tuple[str, set[str]]:
         ext = path.suffix.lower()
 
         if ext in EXTENSION_MAP:
-            # Handle both list and string (for backward compatibility if map changes)
+            # Handle both list and string formats
 
             mapped = EXTENSION_MAP[ext]
 
@@ -548,86 +623,20 @@ async def add_dynamic_knowledge(ctx: RunContext[CouncilDeps]) -> str:
     using the EXTENSION_MAP and checking the knowledge/ directory.
 
 
-    It also loads generic knowledge files (legacy behavior) but prioritizes specific topics.
+    It also loads generic knowledge files but prioritizes specific topics.
 
 
     """
 
     knowledge_dir = settings.knowledge_dir
 
-    knowledge_rulesets: list[tuple[str, str]] = []
+    # Dynamic Knowledge Injection: Load relevant knowledge based on file extensions
+    domain_rules, _loaded_filenames = await get_relevant_knowledge([ctx.deps.file_path])
 
-    # New Dynamic Knowledge Injection
-
-    # Get relevant knowledge based on topics
-
-    domain_rules, loaded_filenames = await get_relevant_knowledge([ctx.deps.file_path])
-
-    # Legacy: Scan all markdown files in knowledge directory (with limits)
-
-    # We keep this for now to ensure we don't lose access to general docs like 'pydantic_ai.md'
-
-    # unless the user explicitly removes this behavior.
-
-    if knowledge_dir.exists():
-        file_count = 0
-
-        for md_file in sorted(knowledge_dir.glob("*.md")):
-            # Enforce maximum file count limit
-
-            if file_count >= MAX_KNOWLEDGE_FILES:
-                logfire.warning(
-                    f"Maximum knowledge file limit ({MAX_KNOWLEDGE_FILES}) reached, "
-                    "skipping remaining files"
-                )
-
-                break
-
-            # Avoid duplicating files that were already loaded via get_relevant_knowledge
-
-            if md_file.name in loaded_filenames:
-                continue
-
-            try:
-                # Check file size before reading
-
-                file_size = md_file.stat().st_size
-
-                if file_size > MAX_KNOWLEDGE_FILE_SIZE:
-                    logfire.warning(
-                        "Knowledge file too large, skipping",
-                        file=str(md_file),
-                        size=file_size,
-                        max_size=MAX_KNOWLEDGE_FILE_SIZE,
-                    )
-
-                    continue
-
-                # Async read
-
-                content = await asyncio.to_thread(md_file.read_text, encoding="utf-8")
-
-                knowledge_rulesets.append((md_file.stem, content))
-
-                file_count += 1
-
-            except (OSError, PermissionError) as e:
-                # Log but don't fail if a file can't be read due to OS/permission issues
-
-                logfire.warning(
-                    "Failed to load knowledge file (OS/permission error)",
-                    file=str(md_file),
-                    error=str(e),
-                )
-
-            except UnicodeDecodeError as e:
-                # Log but don't fail if a file can't be decoded
-
-                logfire.warning(
-                    "Failed to decode knowledge file",
-                    file=str(md_file),
-                    error=str(e),
-                )
+    # Get debug writer from thread-safe storage
+    debug_writer: DebugWriter | None = None
+    with _debug_writers_lock:
+        debug_writer = _debug_writers.get(ctx.deps.file_path)
 
     # Load and render the Jinja2 template
 
@@ -689,14 +698,29 @@ async def add_dynamic_knowledge(ctx: RunContext[CouncilDeps]) -> str:
                 phase_instructions += "Apply general best practices and coding standards. "
 
         prompt = template.render(
-            domain_rules=domain_rules,  # Injected domain rules
-            knowledge_rulesets=knowledge_rulesets,
+            domain_rules=domain_rules,  # Injected domain rules based on file extensions
             extra_instructions=validated_extra_instructions,
             language=language,
             language_specific_files=language_specific_files,
         )
 
-        return prompt + phase_instructions
+        final_prompt = prompt + phase_instructions
+
+        # Write system prompt to debug file if enabled
+        if debug_writer:
+            debug_writer.write_system_prompt(
+                final_prompt,
+                metadata={
+                    "language": language,
+                    "language_specific_files": language_specific_files,
+                    "loaded_filenames": list(_loaded_filenames),
+                    "domain_rules_length": len(domain_rules),
+                    "extra_instructions": validated_extra_instructions is not None,
+                    "review_phases": ctx.deps.review_phases,
+                },
+            )
+
+        return final_prompt
 
     except TemplateError as e:
         logfire.error("Template rendering failed", error=str(e))

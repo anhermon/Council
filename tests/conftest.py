@@ -48,15 +48,22 @@ def mock_settings(mock_project_root):
 @pytest.fixture(autouse=True)
 def patch_settings(mock_settings):
     """Patch the global settings object for all tests."""
+    # Patch get_settings() first, then patch module-level settings with create=True
+    # to handle cases where modules haven't been imported yet
     with (
-        patch("council.config.settings", mock_settings),
-        patch("council.tools.repomix.settings", mock_settings),
-        patch("council.tools.scribe.settings", mock_settings),
-        patch("council.tools.path_utils.settings", mock_settings),
-        patch("council.tools.static_analysis.settings", mock_settings),
-        patch("council.tools.testing.settings", mock_settings),
-        patch("council.tools.git_tools.settings", mock_settings),
-        patch("council.tools.utils.settings", mock_settings),
-        patch("council.tools.validation.settings", mock_settings),
+        patch("council.config.get_settings", return_value=mock_settings),
+        patch("council.config.settings", mock_settings, create=True),
+        patch("council.tools.repomix.settings", mock_settings, create=True),
+        patch("council.tools.scribe.settings", mock_settings, create=True),
+        patch("council.tools.path_utils.settings", mock_settings, create=True),
+        patch("council.tools.static_analysis.settings", mock_settings, create=True),
+        patch("council.tools.testing.settings", mock_settings, create=True),
+        patch("council.tools.git_tools.settings", mock_settings, create=True),
+        patch("council.tools.utils.settings", mock_settings, create=True),
+        patch("council.tools.validation.settings", mock_settings, create=True),
+        patch("council.tools.cache.settings", mock_settings, create=True),
+        patch("council.tools.code_analysis.settings", mock_settings, create=True),
+        patch("council.tools.persistence.settings", mock_settings, create=True),
+        patch("council.tools.security.settings", mock_settings, create=True),
     ):
         yield mock_settings

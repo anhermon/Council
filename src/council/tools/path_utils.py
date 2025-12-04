@@ -4,7 +4,9 @@ import logging
 import os
 from pathlib import Path
 
-from ..config import settings
+from ..config import get_settings
+
+settings = get_settings()
 
 logger = logging.getLogger(__name__)
 

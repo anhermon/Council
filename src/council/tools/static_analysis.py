@@ -6,9 +6,12 @@ from typing import Any
 
 import logfire
 
-from ..config import settings
+from ..config import get_settings
+from .exceptions import SubprocessError
 from .path_utils import resolve_file_path
-from .utils import run_command_safely
+from .utils import resolve_tool_command, run_command_safely
+
+settings = get_settings()
 
 
 async def run_static_analysis(file_path: str, base_path: str | None = None) -> dict[str, Any]:
@@ -69,20 +72,23 @@ async def run_static_analysis(file_path: str, base_path: str | None = None) -> d
                 """Run Ruff analysis."""
                 tool_name = settings.ruff_tool_name
                 try:
+                    # Resolve tool command (use uv run if available)
+                    tool_cmd = resolve_tool_command(tool_name)
+
                     # Check if ruff is available
                     try:
                         await run_command_safely(
-                            [tool_name, "--version"],
+                            tool_cmd + ["--version"],
                             cwd=project_root,
                             timeout=settings.tool_check_timeout,
                             check=False,
                         )
-                    except (RuntimeError, TimeoutError):
+                    except (RuntimeError, TimeoutError, SubprocessError):
                         return tool_name, None
 
                     # Run ruff
                     stdout, stderr, return_code = await run_command_safely(
-                        [tool_name, "check", "--output-format", "json", str(resolved_path)],
+                        tool_cmd + ["check", "--output-format", "json", str(resolved_path)],
                         cwd=project_root,
                         timeout=60.0,  # Ruff-specific timeout
                         max_output_size=settings.max_output_size,
@@ -103,7 +109,7 @@ async def run_static_analysis(file_path: str, base_path: str | None = None) -> d
                             "stderr": stderr,
                             "return_code": return_code,
                         }
-                except (TimeoutError, RuntimeError, OSError) as e:
+                except (TimeoutError, RuntimeError, OSError, SubprocessError) as e:
                     logfire.warning("Ruff analysis failed", error=str(e))
                     return tool_name, {"error": str(e)}
 
@@ -111,21 +117,24 @@ async def run_static_analysis(file_path: str, base_path: str | None = None) -> d
                 """Run MyPy analysis."""
                 tool_name = settings.mypy_tool_name
                 try:
+                    # Resolve tool command (use uv run if available)
+                    tool_cmd = resolve_tool_command(tool_name)
+
                     # Check if mypy is available
                     try:
                         await run_command_safely(
-                            [tool_name, "--version"],
+                            tool_cmd + ["--version"],
                             cwd=project_root,
                             timeout=settings.tool_check_timeout,
                             check=False,
                         )
-                    except (RuntimeError, TimeoutError):
+                    except (RuntimeError, TimeoutError, SubprocessError):
                         return tool_name, None
 
                     # Run mypy
                     stdout, stderr, return_code = await run_command_safely(
-                        [
-                            tool_name,
+                        tool_cmd
+                        + [
                             "--no-error-summary",
                             "--show-error-codes",
                             str(resolved_path),
@@ -140,7 +149,7 @@ async def run_static_analysis(file_path: str, base_path: str | None = None) -> d
                         "stderr": stderr,
                         "return_code": return_code,
                     }
-                except (TimeoutError, RuntimeError, OSError) as e:
+                except (TimeoutError, RuntimeError, OSError, SubprocessError) as e:
                     logfire.warning("MyPy analysis failed", error=str(e))
                     return tool_name, {"error": str(e)}
 
@@ -148,21 +157,24 @@ async def run_static_analysis(file_path: str, base_path: str | None = None) -> d
                 """Run Pylint analysis."""
                 tool_name = settings.pylint_tool_name
                 try:
+                    # Resolve tool command (use uv run if available)
+                    tool_cmd = resolve_tool_command(tool_name)
+
                     # Check if pylint is available
                     try:
                         await run_command_safely(
-                            [tool_name, "--version"],
+                            tool_cmd + ["--version"],
                             cwd=project_root,
                             timeout=settings.tool_check_timeout,
                             check=False,
                         )
-                    except (RuntimeError, TimeoutError):
+                    except (RuntimeError, TimeoutError, SubprocessError):
                         return tool_name, None
 
                     # Run pylint
                     stdout, stderr, return_code = await run_command_safely(
-                        [
-                            tool_name,
+                        tool_cmd
+                        + [
                             "--output-format=json",
                             "--disable=all",
                             "--enable=C,R,W",
@@ -188,7 +200,7 @@ async def run_static_analysis(file_path: str, base_path: str | None = None) -> d
                             "stderr": stderr,
                             "return_code": return_code,
                         }
-                except (TimeoutError, RuntimeError, OSError) as e:
+                except (TimeoutError, RuntimeError, OSError, SubprocessError) as e:
                     logfire.warning("Pylint analysis failed", error=str(e))
                     return tool_name, {"error": str(e)}
 

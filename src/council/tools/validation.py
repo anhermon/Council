@@ -5,8 +5,10 @@ from pathlib import Path
 
 import logfire
 
-from ..config import settings
+from ..config import get_settings
 from .exceptions import PathValidationError, SecurityError
+
+settings = get_settings()
 
 # Maximum path length to prevent DoS attacks
 MAX_PATH_LENGTH = 4096

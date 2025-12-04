@@ -160,7 +160,7 @@ class TestReviewHistory:
             record = ReviewRecord(
                 review_id=f"list-test-{i}",
                 file_path=f"test{i}.py",
-                timestamp=f"2024-01-0{i+1}T00:00:00",
+                timestamp=f"2024-01-0{i + 1}T00:00:00",
                 duration_seconds=1.0,
                 success=True,
                 error_type=None,
@@ -184,7 +184,7 @@ class TestReviewHistory:
             record = ReviewRecord(
                 review_id=f"limit-test-{i}",
                 file_path=f"test{i}.py",
-                timestamp=f"2024-01-0{i+1}T00:00:00",
+                timestamp=f"2024-01-0{i + 1}T00:00:00",
                 duration_seconds=1.0,
                 success=True,
                 error_type=None,
@@ -208,7 +208,7 @@ class TestReviewHistory:
             record = ReviewRecord(
                 review_id=f"filter-test-{i}",
                 file_path="target.py" if i == 1 else f"other{i}.py",
-                timestamp=f"2024-01-0{i+1}T00:00:00",
+                timestamp=f"2024-01-0{i + 1}T00:00:00",
                 duration_seconds=1.0,
                 success=True,
                 error_type=None,
@@ -233,7 +233,7 @@ class TestReviewHistory:
             record = ReviewRecord(
                 review_id=f"history-test-{i}",
                 file_path="history.py",
-                timestamp=f"2024-01-0{i+1}T00:00:00",
+                timestamp=f"2024-01-0{i + 1}T00:00:00",
                 duration_seconds=1.0,
                 success=True,
                 error_type=None,

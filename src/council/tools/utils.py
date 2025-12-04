@@ -2,14 +2,46 @@
 
 import asyncio
 import logging
+import shutil
 from pathlib import Path
 
 import logfire
 
-from ..config import settings
+from ..config import get_settings
 from .exceptions import SubprocessError, SubprocessTimeoutError
 
+settings = get_settings()
+
 logger = logging.getLogger(__name__)
+
+# Cache for uv availability check
+_uv_available: bool | None = None
+
+
+def _is_uv_available() -> bool:
+    """Check if uv is available in PATH."""
+    global _uv_available
+    if _uv_available is None:
+        _uv_available = shutil.which("uv") is not None
+    return _uv_available
+
+
+def resolve_tool_command(tool_name: str) -> list[str]:
+    """
+    Resolve a tool command, using 'uv run' if uv is available.
+
+    This ensures tools from project dependencies are executed in the correct
+    virtual environment context.
+
+    Args:
+        tool_name: Name of the tool (e.g., "ruff", "coverage")
+
+    Returns:
+        Command as list of strings, prefixed with "uv run" if uv is available
+    """
+    if _is_uv_available():
+        return ["uv", "run", tool_name]
+    return [tool_name]
 
 
 async def run_command_safely(
@@ -100,8 +132,25 @@ async def run_command_safely(
     except (SubprocessError, SubprocessTimeoutError):
         # Re-raise subprocess errors as-is
         raise
+    except FileNotFoundError as e:
+        # Command not found - this is expected when checking tool availability
+        # Don't log as error, just raise SubprocessError with clear message
+        raise SubprocessError(
+            f"Command not found: {' '.join(cmd)} - {str(e)}",
+            command=cmd,
+            original_error=e,
+        ) from e
+    except OSError as e:
+        # Other OS-level errors (permission denied, etc.)
+        logfire.warning("Command execution failed (OS error)", cmd=cmd, error=str(e))
+        raise SubprocessError(
+            f"Command execution failed: {' '.join(cmd)} - {str(e)}",
+            command=cmd,
+            original_error=e,
+        ) from e
     except Exception as e:
-        logfire.error("Command execution failed", cmd=cmd, error=str(e))
+        # Unexpected errors
+        logfire.error("Command execution failed (unexpected error)", cmd=cmd, error=str(e))
         raise SubprocessError(
             f"Command execution failed: {' '.join(cmd)} - {str(e)}",
             command=cmd,

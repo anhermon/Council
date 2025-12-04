@@ -7,8 +7,10 @@ from typing import Any
 
 import logfire
 
-from ..config import settings
+from ..config import get_settings
 from .path_utils import resolve_file_path
+
+settings = get_settings()
 
 # Maximum output size (10MB)
 MAX_OUTPUT_SIZE = 10 * 1024 * 1024

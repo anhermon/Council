@@ -11,9 +11,9 @@ from fastmcp import FastMCP
 from pydantic import BaseModel, Field
 
 from .agents import CouncilDeps, ReviewResult, get_councilor_agent
-from .tools.context import get_packed_context, get_packed_diff
 from .tools.metrics_collector import get_metrics_collector
 from .tools.persistence import ReviewRecord, get_review_history
+from .tools.repomix import extract_code_from_xml, get_packed_context, get_packed_diff
 from .tools.scribe import fetch_and_summarize, validate_topic, validate_url
 
 # Configuration with environment variable support
@@ -137,6 +137,9 @@ async def review_code(file_path: str, base_ref: str | None = None) -> ReviewCode
         # Create dependencies for the agent
         deps = CouncilDeps(file_path=file_path)
 
+        # Extract code from XML for cleaner presentation to the agent
+        extracted_code = extract_code_from_xml(packed_xml)
+
         # Get the councilor agent (lazy initialization)
         agent = get_councilor_agent()
 
@@ -144,7 +147,7 @@ async def review_code(file_path: str, base_ref: str | None = None) -> ReviewCode
         try:
             result = await asyncio.wait_for(
                 agent.run(
-                    f"Please review the following code:\n\n{packed_xml}",
+                    f"Please review the following code:\n\n{extracted_code}",
                     deps=deps,
                 ),
                 timeout=REQUEST_TIMEOUT,

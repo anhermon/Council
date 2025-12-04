@@ -6,8 +6,10 @@ from typing import Any
 
 import logfire
 
-from ..config import settings
+from ..config import get_settings
 from .path_utils import resolve_file_path
+
+settings = get_settings()
 
 # Maximum number of files to search
 MAX_SEARCH_RESULTS = 50
@@ -155,8 +157,20 @@ async def search_codebase(query: str, file_pattern: str | None = None) -> list[s
                         except Exception:
                             continue
         else:
-            # Search all code files
-            code_extensions = {".py", ".js", ".ts", ".tsx", ".jsx", ".java", ".go", ".rs"}
+            # Search all code files and template files
+            code_extensions = {
+                ".py",
+                ".js",
+                ".ts",
+                ".tsx",
+                ".jsx",
+                ".java",
+                ".go",
+                ".rs",
+                ".j2",
+                ".jinja",
+                ".jinja2",  # Template files
+            }
             for file_path in search_root.rglob("*"):
                 if (
                     file_path.is_file()
@@ -184,13 +198,17 @@ async def search_codebase(query: str, file_pattern: str | None = None) -> list[s
 
 async def analyze_imports(file_path: str, base_path: str | None = None) -> dict[str, Any]:
     """
-    Analyze imports and dependencies of a file.
+    Analyze imports and dependencies of a Python file.
+
+    IMPORTANT: This tool only works for Python (.py) files. For other file types,
+    it will return empty results with a note. Only use this tool when reviewing
+    Python source code files.
 
     This tool extracts import statements and analyzes dependencies to help
     understand how code interacts with other modules.
 
     Args:
-        file_path: Path to the file to analyze. Can be:
+        file_path: Path to the Python file to analyze. Can be:
             - Full path: "src/council/config.py"
             - Relative path: "config.py" (will search from project root)
             - Just filename: "config.py" (will search recursively in project)
@@ -202,6 +220,7 @@ async def analyze_imports(file_path: str, base_path: str | None = None) -> dict[
         - from_imports: List of from-import statements
         - local_imports: List of local/relative imports
         - external_imports: List of external package imports
+        - note: Warning message if file is not Python
 
     Raises:
         ValueError: If path is invalid

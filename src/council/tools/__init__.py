@@ -1,6 +1,5 @@
 """Tools for The Council."""
 
-from .context import get_packed_context, get_packed_diff
 from .exceptions import (
     PathValidationError,
     RepomixError,
@@ -13,11 +12,12 @@ from .exceptions import (
 )
 from .metrics_collector import MetricsCollector, ReviewMetrics, get_metrics_collector
 from .persistence import ReviewHistory, ReviewRecord, get_review_history
+from .repomix import get_packed_context, get_packed_diff
 from .scribe import fetch_and_summarize
 from .validation import check_xml_security, validate_file_path, validate_include_pattern
 
 __all__ = [
-    # Context extraction (backward compatible)
+    # Context extraction
     "get_packed_context",
     "get_packed_diff",
     # Scribe

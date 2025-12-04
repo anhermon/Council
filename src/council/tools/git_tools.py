@@ -5,9 +5,11 @@ from typing import Any
 
 import logfire
 
-from ..config import settings
+from ..config import get_settings
 from .path_utils import resolve_file_path
 from .utils import run_command_safely
+
+settings = get_settings()
 
 # Maximum number of history entries
 MAX_HISTORY_LIMIT = 100

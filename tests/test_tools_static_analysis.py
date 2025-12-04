@@ -74,7 +74,11 @@ class TestRunStaticAnalysis:
         test_file.write_text("def hello():\n    pass\n")
 
         def side_effect(cmd, **_kwargs):
-            if cmd[0] == "ruff":
+            # Handle both "ruff" and "uv run ruff" commands
+            tool_name = cmd[2] if cmd[0] == "uv" and len(cmd) > 2 and cmd[1] == "run" else cmd[0]
+            if tool_name == "ruff":
+                if "--version" in cmd:
+                    return "ruff 0.1.0", "", 0
                 if "check" in cmd:
                     return json.dumps([{"code": "E501", "message": "Line too long"}]), "", 0
                 return "ruff 0.1.0", "", 0
@@ -95,7 +99,11 @@ class TestRunStaticAnalysis:
         test_file.write_text("def hello() -> None:\n    pass\n")
 
         def side_effect(cmd, **_kwargs):
-            if cmd[0] == "mypy":
+            # Handle both "mypy" and "uv run mypy" commands
+            tool_name = cmd[2] if cmd[0] == "uv" and len(cmd) > 2 and cmd[1] == "run" else cmd[0]
+            if tool_name == "mypy":
+                if "--version" in cmd:
+                    return "mypy 1.0.0", "", 0
                 if "--show-error-codes" in cmd:
                     return "Success: no issues found", "", 0
                 return "mypy 1.0.0", "", 0
@@ -116,7 +124,11 @@ class TestRunStaticAnalysis:
         test_file.write_text("def hello():\n    pass\n")
 
         def side_effect(cmd, **_kwargs):
-            if cmd[0] == "pylint":
+            # Handle both "pylint" and "uv run pylint" commands
+            tool_name = cmd[2] if cmd[0] == "uv" and len(cmd) > 2 and cmd[1] == "run" else cmd[0]
+            if tool_name == "pylint":
+                if "--version" in cmd:
+                    return "pylint 2.0.0", "", 0
                 if "--output-format=json" in cmd:
                     return (
                         json.dumps([{"type": "convention", "message": "Missing docstring"}]),
@@ -170,15 +182,23 @@ class TestRunStaticAnalysis:
         test_file.write_text("def hello() -> None:\n    pass\n")
 
         def side_effect(cmd, **_kwargs):
-            if cmd[0] == "ruff":
+            # Handle both direct tool commands and "uv run tool" commands
+            tool_name = cmd[2] if cmd[0] == "uv" and len(cmd) > 2 and cmd[1] == "run" else cmd[0]
+            if tool_name == "ruff":
+                if "--version" in cmd:
+                    return "ruff 0.1.0", "", 0
                 if "check" in cmd:
                     return json.dumps([]), "", 0
                 return "ruff 0.1.0", "", 0
-            if cmd[0] == "mypy":
+            if tool_name == "mypy":
+                if "--version" in cmd:
+                    return "mypy 1.0.0", "", 0
                 if "--show-error-codes" in cmd:
                     return "Success", "", 0
                 return "mypy 1.0.0", "", 0
-            if cmd[0] == "pylint":
+            if tool_name == "pylint":
+                if "--version" in cmd:
+                    return "pylint 2.0.0", "", 0
                 if "--output-format=json" in cmd:
                     return json.dumps([]), "", 0
                 return "pylint 2.0.0", "", 0
@@ -215,7 +235,11 @@ class TestRunStaticAnalysis:
         test_file.write_text("def hello():\n    pass\n")
 
         def side_effect(cmd, **_kwargs):
-            if cmd[0] == "ruff":
+            # Handle both "ruff" and "uv run ruff" commands
+            tool_name = cmd[2] if cmd[0] == "uv" and len(cmd) > 2 and cmd[1] == "run" else cmd[0]
+            if tool_name == "ruff":
+                if "--version" in cmd:
+                    return "ruff 0.1.0", "", 0
                 if "check" in cmd:
                     return "Invalid JSON output", "", 0
                 return "ruff 0.1.0", "", 0

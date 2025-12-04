@@ -15,7 +15,7 @@ dependencies = [
 ]
 
 [project.scripts]
-council = "council.cli:main"
+council = "council.cli.main:main"
 
 [build-system]
 requires = ["hatchling"]

@@ -6,9 +6,12 @@ from typing import Any
 
 import logfire
 
-from ..config import settings
+from ..config import get_settings
+from .exceptions import SubprocessError
 from .path_utils import resolve_file_path
-from .utils import run_command_safely
+from .utils import resolve_tool_command, run_command_safely
+
+settings = get_settings()
 
 
 async def find_related_tests(file_path: str, base_path: str | None = None) -> list[str]:
@@ -206,14 +209,16 @@ async def check_test_coverage(file_path: str, base_path: str | None = None) -> d
         project_root = settings.project_root.resolve()
 
         # Check if coverage.py is available
+        # Resolve tool command (use uv run if available)
+        coverage_cmd = resolve_tool_command(settings.coverage_tool_name)
         try:
             await run_command_safely(
-                [settings.coverage_tool_name, "--version"],
+                coverage_cmd + ["--version"],
                 cwd=project_root,
                 timeout=settings.tool_check_timeout,
                 check=False,
             )
-        except (RuntimeError, TimeoutError, OSError):
+        except (RuntimeError, TimeoutError, OSError, SubprocessError):
             return {
                 "covered": False,
                 "coverage_percent": 0,
@@ -236,8 +241,8 @@ async def check_test_coverage(file_path: str, base_path: str | None = None) -> d
 
             # Run coverage report
             stdout, stderr, return_code = await run_command_safely(
-                [
-                    settings.coverage_tool_name,
+                coverage_cmd
+                + [
                     "report",
                     "--include",
                     rel_path,
@@ -282,7 +287,7 @@ async def check_test_coverage(file_path: str, base_path: str | None = None) -> d
                 "note": "Coverage data not available. Run tests with coverage first.",
             }
 
-        except (TimeoutError, RuntimeError, OSError) as e:
+        except (TimeoutError, RuntimeError, OSError, SubprocessError) as e:
             logfire.warning("Coverage check failed", error=str(e))
             return {
                 "covered": False,

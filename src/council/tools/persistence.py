@@ -7,7 +7,9 @@ from typing import Any
 
 import logfire
 
-from ..config import settings
+from ..config import get_settings
+
+settings = get_settings()
 
 
 @dataclass

@@ -10,7 +10,9 @@ from urllib.parse import urlparse
 import httpx
 import logfire
 
-from ..config import settings
+from ..config import get_settings
+
+settings = get_settings()
 
 # Private IP ranges and localhost patterns to block
 PRIVATE_IP_RANGES = [

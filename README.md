@@ -197,7 +197,7 @@ The `COUNCIL_MODEL` environment variable is required and must be set. When using
 
 ### Repomix Configuration
 
-Repomix is configured via command-line flags. You can customize which files are included by modifying the `get_packed_context` function in `src/council/tools/repomix.py` if needed. (Note: `context.py` is a backward-compatible wrapper that re-exports from `repomix.py`.)
+Repomix is configured via command-line flags. You can customize which files are included by modifying the `get_packed_context` function in `src/council/tools/repomix.py` if needed.
 
 ### Knowledge Base
 

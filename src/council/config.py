@@ -25,10 +25,11 @@ DEFAULT_MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
 DEFAULT_MAX_OUTPUT_SIZE = 10 * 1024 * 1024  # 10MB
 
 # Static analysis tool names
-RUFF_TOOL_NAME = "ruff"
-MYPY_TOOL_NAME = "mypy"
-PYLINT_TOOL_NAME = "pylint"
-COVERAGE_TOOL_NAME = "coverage"
+# Use "uv run" prefix for tools that are project dependencies
+RUFF_TOOL_NAME = "ruff"  # Will be prefixed with "uv run" if uv is available
+MYPY_TOOL_NAME = "mypy"  # Will be prefixed with "uv run" if uv is available
+PYLINT_TOOL_NAME = "pylint"  # Will be prefixed with "uv run" if uv is available
+COVERAGE_TOOL_NAME = "coverage"  # Will be prefixed with "uv run" if uv is available
 
 
 @dataclass
@@ -207,9 +208,9 @@ class Settings:
 
 
 def get_settings() -> Settings:
-    """Get the settings instance. Use this instead of global variable for better testability."""
+    """Get the settings instance."""
     return Settings.from_env()
 
 
-# For backward compatibility - but consider using get_settings() instead
+# Module-level settings instance for convenience and testability
 settings = get_settings()

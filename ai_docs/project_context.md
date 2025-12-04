@@ -2,7 +2,7 @@
 
 ## 1. Purpose & Core Logic
 
-The Council is an AI-powered code review agent that acts as an MCP (Model Context Protocol) server. It uses Repomix to extract comprehensive code context, Pydantic-AI for structured AI outputs, and Jina Reader to learn from documentation. The agent performs automated code reviews with severity assessments, issue detection, and suggested fixes. It can dynamically learn coding standards from documentation URLs and apply them to future reviews.
+The Council is an AI-powered code review agent. It uses Repomix to extract comprehensive code context, Pydantic-AI for structured AI outputs, and Jina Reader to learn from documentation. The agent performs automated code reviews with severity assessments, issue detection, and suggested fixes. It can dynamically learn coding standards from documentation URLs and apply them to future reviews.
 
 ## 2. Tech Stack & Key Libraries
 
@@ -21,22 +21,24 @@ The Council is an AI-powered code review agent that acts as an MCP (Model Contex
 
 ## 3. Architecture & Key Patterns
 
-- **Architecture:** MCP Server with agent-based review system
-  - Server Layer: FastMCP exposes tools as MCP endpoints
-  - Logic Layer: Pydantic-AI agent (`councilor.py`) performs reviews
-  - Context Layer: Repomix wrapper extracts code context as XML
-  - Knowledge Layer: Jina Reader fetches docs, stored in `knowledge/` directory
+- **Architecture:** Dual-mode agent review system (CLI + MCP Server)
+  - **CLI Layer**: Click commands (review, learn, context, housekeeping) - `cli/main.py`
+  - **MCP Server Layer**: FastMCP server exposing tools as MCP endpoints - `main.py`
+  - **Logic Layer**: Pydantic-AI agent (`councilor.py`) performs reviews
+  - **Context Layer**: Repomix wrapper extracts code context as XML
+  - **Knowledge Layer**: Jina Reader fetches docs, stored in `knowledge/` directory
 - **State Management:** Stateless agent with lazy initialization (thread-safe singleton pattern)
 - **Auth Pattern:** API keys via environment variables (OpenAI, LiteLLM proxy, or direct providers)
 
 ## 4. Operational Context
 
 - **Run Locally:**
-  - MCP Server: `uv run python -m src.council.main` or `uv run council server`
-  - CLI Review: `uv run council review <file_path> [options]`
-  - Learn Rules: `uv run council learn <url> <topic>`
-  - Housekeeping: `uv run council housekeeping`
-- **Run Tests:** (Not yet implemented - placeholder in README)
+  - **MCP Server**: `uv run python -m council.main` or `uv run council server` (if command exists)
+  - **CLI Review**: `uv run council review <file_path> [options]`
+  - **Learn Rules**: `uv run council learn <url> <topic>`
+  - **Get Context**: `uv run council context <file_path>` - Output review context for external agents
+  - **Housekeeping**: `uv run council housekeeping`
+- **Run Tests:** `uv run pytest` (tests in `tests/` directory)
 - **Build/Deploy:**
   - Install: `uv sync`
   - Package: Standard Python packaging via `pyproject.toml` (hatchling backend)
@@ -55,8 +57,13 @@ council/
 └── src/
     └── council/
         ├── __init__.py     # Package init, version
-        ├── main.py         # FastMCP server entry point, MCP tool definitions
-        ├── cli.py          # Click CLI interface (review, learn, server, housekeeping commands)
+        ├── main.py         # FastMCP server entry point (MCP tools: review_code, learn_rules)
+        ├── cli/
+        │   ├── main.py     # Main CLI entry point (Click group)
+        │   ├── commands/   # CLI commands (review, learn, context, housekeeping)
+        │   ├── core/       # Core review execution and context building
+        │   ├── ui/         # UI components (spinner, streaming, output)
+        │   └── utils/      # Utility functions (paths, errors)
         ├── config.py       # Settings management, path resolution, env vars
         ├── templates/
         │   └── system_prompt.j2  # Jinja2 template for agent system prompt
@@ -65,7 +72,7 @@ council/
         │   └── councilor.py       # Core Pydantic-AI agent, model creation, knowledge loading
         └── tools/
             ├── __init__.py        # Tool exports
-            ├── context.py         # Repomix wrapper, path validation, XML security checks
+            ├── repomix.py         # Repomix integration, path validation, XML security checks
             ├── git_tools.py       # Git integration (diff, history, uncommitted files)
             └── scribe.py          # Jina Reader wrapper, URL validation, SSRF protection
 ```
@@ -81,3 +88,4 @@ council/
 - **Code Quality:** Project uses Ruff for linting and formatting. Run `uv run ruff check --fix src/` and `uv run ruff format src/` to maintain code quality. All linting issues should be resolved before committing.
 - **Configuration Separation:** No user-specific configuration values should be hardcoded in the repository. All model names, API endpoints, and other user-specific settings must come from environment variables.
 - **Uncommitted Reviews:** Use `--uncommitted` flag to review only files with uncommitted changes. This is useful for pre-commit reviews.
+- **Context Command:** Use `council context <file_path>` to get review context (code, prompt, knowledge) for external agents to perform reviews without Council's LLM.

@@ -1,6 +1,7 @@
 """Repomix execution module for context extraction."""
 
 import hashlib
+import re
 import tempfile
 import threading
 import time
@@ -8,7 +9,7 @@ from pathlib import Path
 
 import logfire
 
-from ..config import settings
+from ..config import get_settings
 from .exceptions import (
     PathValidationError,
     RepomixError,
@@ -18,6 +19,10 @@ from .exceptions import (
 )
 from .utils import run_command_safely
 from .validation import check_xml_security, validate_file_path, validate_include_pattern
+
+settings = get_settings()
+
+__all__ = ["get_packed_context", "get_packed_diff", "extract_code_from_xml"]
 
 # Cache TTL for Repomix results (1 hour in seconds)
 REPOMIX_CACHE_TTL = 3600.0
@@ -235,6 +240,85 @@ async def get_packed_context(file_path: str) -> str:
                     file=str(output_path),
                     error=str(e),
                 )
+
+
+def extract_code_from_xml(xml_content: str) -> str:
+    """
+    Extract code content from Repomix XML output.
+
+    This function extracts the actual code from the XML structure, presenting
+    it in a cleaner format for the agent to review. The XML structure is:
+    <repository>
+      <repository_files>
+        <file>
+          <path>...</path>
+          <content>...</content>
+        </file>
+      </repository_files>
+    </repository>
+
+    Args:
+        xml_content: The full XML content from Repomix
+
+    Returns:
+        Extracted code content with file paths as headers
+    """
+    if not xml_content or not xml_content.strip():
+        return ""
+
+    # Use regex to extract file content from XML
+    # Pattern matches <content>...</content> tags and extracts the content
+    # Also captures the file path for context
+    code_sections = []
+
+    # Pattern to match file blocks with path and content
+    file_pattern = r"<file>.*?<path>(.*?)</path>.*?<content>(.*?)</content>.*?</file>"
+    matches = re.findall(file_pattern, xml_content, re.DOTALL)
+
+    for file_path, content in matches:
+        # Decode XML entities in file path
+        file_path = (
+            file_path.replace("&amp;", "&")
+            .replace("&lt;", "<")
+            .replace("&gt;", ">")
+            .replace("&quot;", '"')
+            .replace("&apos;", "'")
+        )
+
+        # Decode XML entities in content
+        content = (
+            content.replace("&amp;", "&")
+            .replace("&lt;", "<")
+            .replace("&gt;", ">")
+            .replace("&quot;", '"')
+            .replace("&apos;", "'")
+        )
+
+        # Add file header and content
+        code_sections.append(f"=== File: {file_path} ===\n{content}")
+
+    if code_sections:
+        return "\n\n".join(code_sections)
+
+    # Fallback: if no matches found, try simpler pattern for just content
+    content_pattern = r"<content>(.*?)</content>"
+    content_matches = re.findall(content_pattern, xml_content, re.DOTALL)
+
+    if content_matches:
+        # Decode XML entities
+        decoded_contents = [
+            content.replace("&amp;", "&")
+            .replace("&lt;", "<")
+            .replace("&gt;", ">")
+            .replace("&quot;", '"')
+            .replace("&apos;", "'")
+            for content in content_matches
+        ]
+        return "\n\n".join(decoded_contents)
+
+    # If no content found, return original (might be malformed XML)
+    logfire.warning("Could not extract code from XML, returning original content")
+    return xml_content
 
 
 async def get_packed_diff(file_path: str, base_ref: str = "HEAD") -> str:
