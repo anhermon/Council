@@ -2,14 +2,14 @@
 """Check Bandit JSON output for medium/high severity issues."""
 
 import json
+import os
 import sys
-import tempfile
 from pathlib import Path
 
 
 def main():
-    # Use system temp directory (respects TMPDIR env var)
-    tmp_dir = Path(tempfile.gettempdir())
+    # Use /tmp for consistency with Taskfile (or TMPDIR env var if set)
+    tmp_dir = Path(os.environ.get("TMPDIR", "/tmp"))  # nosec B108
     report_file = tmp_dir / "bandit-report.json"
 
     if not report_file.exists():
