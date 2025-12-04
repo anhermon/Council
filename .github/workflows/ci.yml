@@ -91,9 +91,16 @@ jobs:
         run: |
           uv add --dev bandit[toml] || echo "bandit already installed or unavailable"
 
-      - name: Run Bandit security scan
+      - name: Check if bandit is available
+        id: check_bandit
+        continue-on-error: true
         run: |
-          uv run bandit -r src/council -ll || echo "⚠ bandit not available"
+          uv run bandit --version && echo "available=true" >> $GITHUB_OUTPUT || echo "available=false" >> $GITHUB_OUTPUT
+
+      - name: Run Bandit security scan
+        if: steps.check_bandit.outputs.available == 'true'
+        run: |
+          uv run bandit -r src/council -ll
 
   security-deps:
     name: Dependency security check
