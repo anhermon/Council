@@ -26,6 +26,10 @@ async def build_review_context(
     extracted_code = extract_code_from_xml(packed_xml)
 
     # Load relevant knowledge
+    # Note: Knowledge base may be empty if:
+    # - No matching library imports found in code files
+    # - general.md doesn't exist in knowledge directory
+    # - No language-specific knowledge files exist for detected languages
     knowledge_base, loaded_filenames = await get_relevant_knowledge([deps.file_path])
 
     # Detect language

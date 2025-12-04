@@ -590,21 +590,45 @@ async def get_relevant_knowledge(file_paths: list[str]) -> tuple[str, set[str]]:
     # Get available knowledge files (library-specific)
     available_knowledge_files = {f.stem for f in knowledge_dir.glob("*.md") if f.is_file()}
 
+    # Collect files to process for library detection
+    files_to_process: list[Path] = []
+
+    # Process file paths (both existing files and directories)
     for file_path in file_paths:
         path = Path(file_path)
 
+        if path.is_dir():
+            # If it's a directory, find all code files recursively
+            for ext in EXTENSION_MAP:
+                for code_file in path.rglob(f"*{ext}"):
+                    if code_file.is_file():
+                        files_to_process.append(code_file)
+                        # Extract language topics from file extension
+                        file_ext = code_file.suffix.lower()
+                        if file_ext in EXTENSION_MAP:
+                            mapped = EXTENSION_MAP[file_ext]
+                            if isinstance(mapped, list):
+                                topics.update(mapped)
+                            else:
+                                topics.add(mapped)
+        else:
+            # For file paths, check extension even if file doesn't exist
+            # (useful for language detection from path alone)
+            ext = path.suffix.lower()
+            if ext in EXTENSION_MAP:
+                mapped = EXTENSION_MAP[ext]
+                if isinstance(mapped, list):
+                    topics.update(mapped)
+                else:
+                    topics.add(mapped)
+
+            # Only add to processing list if file exists
+            if path.exists():
+                files_to_process.append(path)
+
+    # Process each file for library detection
+    for path in files_to_process:
         ext = path.suffix.lower()
-
-        if ext in EXTENSION_MAP:
-            # Handle both list and string formats
-
-            mapped = EXTENSION_MAP[ext]
-
-            if isinstance(mapped, list):
-                topics.update(mapped)
-
-            else:
-                topics.add(mapped)
 
         # For Python files, try to detect library imports using AST parsing
         if ext == ".py" and path.exists():
@@ -643,7 +667,7 @@ async def get_relevant_knowledge(file_paths: list[str]) -> tuple[str, set[str]]:
             except Exception as e:
                 # Log the error for debugging but continue processing
                 logfire.debug(
-                    f"Failed to detect library imports in {file_path}",
+                    f"Failed to detect library imports in {path}",
                     error=str(e),
                     error_type=type(e).__name__,
                 )
