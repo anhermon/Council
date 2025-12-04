@@ -127,6 +127,27 @@ uv run council learn <url> <topic>
 uv run council learn "https://docs.anthropic.com/en/docs/build-with-claude/prompt-engineering/system-prompts" prompt_engineering
 ```
 
+#### Get Context
+Output review context for external agents (useful for using other AI models):
+```bash
+uv run council context <file_path> [--output json|markdown] [--diff <ref>] [--extra-instructions "instructions"]
+```
+
+**Examples:**
+```bash
+# Get context in JSON format (default)
+uv run council context src/council/main.py
+
+# Get context in markdown format
+uv run council context src/council/main.py --output markdown
+
+# Get context for diff-based review
+uv run council context src/council/main.py --diff HEAD
+
+# Get context with extra instructions
+uv run council context src/council/main.py --extra-instructions "Focus on security"
+```
+
 #### Run MCP Server
 ```bash
 uv run council server

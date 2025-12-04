@@ -2,15 +2,23 @@
 
 import asyncio
 import json
+import logging
 import sys
 from pathlib import Path
 
 import click
+import logfire
 
 from ...agents import CouncilDeps
 from ...tools.repomix import get_packed_context, get_packed_diff
 from ..core.context_builder import build_review_context
 from ..utils.paths import resolve_path
+
+# Suppress logfire console output for clean JSON output
+# Configure before any logfire calls
+logfire.configure(send_to_logfire=False, console=False)
+# Also suppress logfire logger output
+logging.getLogger("logfire").setLevel(logging.ERROR)
 
 # Configuration constants
 MAX_EXTRA_INSTRUCTIONS_LENGTH = 10000
@@ -104,8 +112,17 @@ def context(
             review_phases = None
 
     async def _get_context() -> None:
+        # Suppress logfire output for both JSON and markdown to ensure clean output
+        # Configure before any operations that might use logfire
+        logfire.configure(send_to_logfire=False, console=False)
+        logging.getLogger("logfire").setLevel(logging.CRITICAL)  # Only show critical errors
+        # Also suppress other logfire loggers
+        logging.getLogger("logfire.instrumentation").setLevel(logging.CRITICAL)
+        logging.getLogger("logfire.otel").setLevel(logging.CRITICAL)
+
         try:
-            click.echo("📦 Extracting context...", err=True)
+            if output != "json":  # Only show status messages for markdown output
+                click.echo("📦 Extracting context...", err=True)
 
             # Get packed context using Repomix
             if base_ref:
@@ -138,7 +155,8 @@ def context(
 
 def _output_json(context_data: dict) -> None:
     """Output context as JSON."""
-    click.echo(json.dumps(context_data, indent=2))
+    # Use sys.stdout directly to avoid any click formatting that might interfere
+    print(json.dumps(context_data, indent=2), file=sys.stdout)
 
 
 def _output_markdown(context_data: dict) -> None:
@@ -158,14 +176,20 @@ def _output_markdown(context_data: dict) -> None:
     click.echo(context_data["system_prompt"])
     click.echo("\n```\n")
 
-    if context_data["knowledge_base"]:
-        click.echo("## Knowledge Base\n")
+    # Always show knowledge base section, even if empty
+    click.echo("## Knowledge Base\n")
+    knowledge_content = context_data.get("knowledge_base", "").strip()
+    if knowledge_content:
         click.echo("```\n")
-        click.echo(context_data["knowledge_base"])
+        click.echo(knowledge_content)
         click.echo("\n```\n")
+    else:
+        click.echo("*No relevant knowledge base content loaded.*\n")
 
     click.echo("## Code to Review\n")
-    click.echo("```\n")
+    # Add language identifier for syntax highlighting
+    language = context_data.get("language", "text")
+    click.echo(f"```{language}\n")
     click.echo(context_data["extracted_code"])
     click.echo("\n```\n")
 

@@ -535,6 +535,10 @@ async def get_relevant_knowledge(file_paths: list[str]) -> tuple[str, set[str]]:
         return "", set()
 
     topics = set()
+    library_topics = set()
+
+    # Get available knowledge files (library-specific)
+    available_knowledge_files = {f.stem for f in knowledge_dir.glob("*.md") if f.is_file()}
 
     for file_path in file_paths:
         path = Path(file_path)
@@ -552,6 +556,29 @@ async def get_relevant_knowledge(file_paths: list[str]) -> tuple[str, set[str]]:
             else:
                 topics.add(mapped)
 
+        # For Python files, try to detect library imports
+        if ext == ".py" and path.exists():
+            try:
+                content = await asyncio.to_thread(
+                    lambda fp=path: fp.read_text(encoding="utf-8", errors="replace")
+                )
+                # Simple import detection - look for common library imports
+                # Check for direct matches with available knowledge files
+                for lib_name in available_knowledge_files:
+                    # Check for import patterns: import lib_name, from lib_name, import lib_name as
+                    import_patterns = [
+                        f"import {lib_name}",
+                        f"from {lib_name}",
+                        f"import {lib_name.replace('_', '')}",  # e.g., pydantic_ai -> pydantic
+                    ]
+                    for pattern in import_patterns:
+                        if pattern in content:
+                            library_topics.add(lib_name)
+                            break
+            except Exception:
+                # If file reading fails, skip library detection
+                pass
+
     relevant_files: list[Path] = []
 
     loaded_filenames: set[str] = set()
@@ -563,6 +590,7 @@ async def get_relevant_knowledge(file_paths: list[str]) -> tuple[str, set[str]]:
     if general_file.exists():
         relevant_files.append(general_file)
 
+    # Load language-specific knowledge
     for topic in topics:
         topic_file = knowledge_dir / f"{topic}.md"
 
@@ -571,6 +599,12 @@ async def get_relevant_knowledge(file_paths: list[str]) -> tuple[str, set[str]]:
         else:
             # Log warning as requested
             logfire.debug(f"Knowledge topic file not found: {topic}.md")
+
+    # Load library-specific knowledge
+    for lib_topic in library_topics:
+        lib_file = knowledge_dir / f"{lib_topic}.md"
+        if lib_file.exists() and lib_file.name not in loaded_filenames:
+            relevant_files.append(lib_file)
 
     knowledge_content = []
 

@@ -33,7 +33,7 @@ The Council is an AI-powered code review agent. It uses Repomix to extract compr
 ## 4. Operational Context
 
 - **Run Locally:**
-  - **MCP Server**: `uv run python -m council.main` or `uv run council server` (if command exists)
+  - **MCP Server**: `uv run python -m council.main` (FastMCP server for MCP-compatible editors)
   - **CLI Review**: `uv run council review <file_path> [options]`
   - **Learn Rules**: `uv run council learn <url> <topic>`
   - **Get Context**: `uv run council context <file_path>` - Output review context for external agents
@@ -74,7 +74,14 @@ council/
             ├── __init__.py        # Tool exports
             ├── repomix.py         # Repomix integration, path validation, XML security checks
             ├── git_tools.py       # Git integration (diff, history, uncommitted files)
-            └── scribe.py          # Jina Reader wrapper, URL validation, SSRF protection
+            ├── scribe.py          # Jina Reader wrapper, URL validation, SSRF protection
+            ├── architecture.py   # Architecture analysis tools
+            ├── code_analysis.py  # Code analysis utilities
+            ├── security.py       # Security validation tools
+            ├── testing.py        # Testing-related tools
+            ├── metrics.py        # Metrics collection
+            ├── persistence.py    # Review history persistence
+            └── validation.py      # Input validation utilities
 ```
 
 ## 6. Known Gotchas & Debugging

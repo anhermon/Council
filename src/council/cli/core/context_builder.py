@@ -207,27 +207,20 @@ You must return a structured review result with the following format:
       "category": "security|performance|maintainability|bug|style|documentation",
       "line_number": 42,
       "code_snippet": "exact code showing the issue",
-      "related_files": ["file1.py", "file2.py"],
+      "related_files": [],
       "suggested_priority": 8,
-      "references": ["CVE-2023-1234", "https://example.com/docs"],
+      "references": [],
       "auto_fixable": false
     }
   ],
   "severity": "low|medium|high|critical",
   "code_fix": "Optional suggested code fix",
-  "cross_file_issues": [
-    {
-      "description": "Issue spanning multiple files",
-      "severity": "medium",
-      "files": ["file1.py", "file2.py"],
-      "category": "maintainability"
-    }
-  ],
+  "cross_file_issues": [],
   "dependency_analysis": {
-    "external_dependencies": ["package1", "package2"],
-    "internal_dependencies": ["module1", "module2"],
-    "circular_dependencies": [["file1.py", "file2.py"]],
-    "unused_imports": ["unused_module"]
+    "external_dependencies": [],
+    "internal_dependencies": [],
+    "circular_dependencies": [],
+    "unused_imports": []
   }
 }
 ```
