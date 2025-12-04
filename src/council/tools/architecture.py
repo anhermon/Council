@@ -158,6 +158,7 @@ async def analyze_architecture(file_path: str, base_path: str | None = None) -> 
         anti_patterns: list[str] = []
         coupling_issues: list[str] = []
         recommendations: list[str] = []
+        analyzed_count = 0  # Track how many files were actually analyzed
 
         parser_instance = get_code_parser()
 
@@ -171,6 +172,7 @@ async def analyze_architecture(file_path: str, base_path: str | None = None) -> 
                     # Use existing Python AST logic
                     try:
                         tree = ast.parse(content, filename=str(file_path_obj))
+                        analyzed_count += 1
                     except SyntaxError:
                         continue
 
@@ -217,6 +219,37 @@ async def analyze_architecture(file_path: str, base_path: str | None = None) -> 
                                 f"Consider using a configuration object for {node.name} parameters"
                             )
 
+                    # Detect deep nesting
+                    def get_max_depth(node: ast.AST, depth: int = 0) -> int:
+                        """Calculate maximum nesting depth in a node."""
+                        max_depth = depth
+                        for child in ast.iter_child_nodes(node):
+                            if isinstance(
+                                child,
+                                ast.If
+                                | ast.For
+                                | ast.While
+                                | ast.With
+                                | ast.Try
+                                | ast.FunctionDef
+                                | ast.AsyncFunctionDef,
+                            ):
+                                child_depth = get_max_depth(child, depth + 1)
+                                max_depth = max(max_depth, child_depth)
+                        return max_depth
+
+                    for node in ast.walk(tree):
+                        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
+                            max_depth = get_max_depth(node)
+                            if max_depth > 5:  # More than 5 levels of nesting
+                                anti_patterns.append(
+                                    f"Deep Nesting: {node.name} has {max_depth} levels of nesting"
+                                )
+                                recommendations.append(
+                                    f"Consider refactoring {node.name} to reduce nesting depth"
+                                )
+                                break  # Only report once per function
+
                     imports = []
                     for node in ast.walk(tree):
                         if isinstance(node, ast.Import):
@@ -242,6 +275,7 @@ async def analyze_architecture(file_path: str, base_path: str | None = None) -> 
 
                 elif extension in LANGUAGE_MAP:
                     # Use Tree Sitter for other languages
+                    analyzed_count += 1
                     ts_result = _analyze_architecture_treesitter(
                         content, extension, parser_instance, file_path_obj.name
                     )
@@ -251,14 +285,22 @@ async def analyze_architecture(file_path: str, base_path: str | None = None) -> 
                         if "coupling_analysis" in ts_result:
                             coupling_issues.extend(ts_result["coupling_analysis"].get("issues", []))
                         recommendations.extend(ts_result.get("recommendations", []))
+                else:
+                    # Non-supported file type
+                    recommendations.append(
+                        f"Architecture analysis is only supported for Python files and other supported languages. {file_path_obj.name} is not supported."
+                    )
 
             except Exception as e:
                 logfire.warning("Failed to analyze file", file=str(file_path_obj), error=str(e))
                 continue
 
         # Calculate cohesion score (simplified)
-        cohesion_score = 100
-        if len(files_to_analyze) > 0:
+        if analyzed_count == 0:
+            # No files were actually analyzed (all unsupported or syntax errors)
+            cohesion_score = 0
+        else:
+            cohesion_score = 100
             cohesion_score -= len(anti_patterns) * 5
             cohesion_score -= len(coupling_issues) * 3
             cohesion_score = max(0, min(100, cohesion_score))

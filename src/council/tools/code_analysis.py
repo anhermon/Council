@@ -419,7 +419,7 @@ async def analyze_imports(file_path: str, base_path: str | None = None) -> dict[
                 "from_imports": [],
                 "local_imports": [],
                 "external_imports": [],
-                "note": f"Import analysis not supported for {extension} files",
+                "note": f"Import analysis is only supported for Python files and other supported languages. {extension} files are not supported.",
             }
 
     except Exception as e:

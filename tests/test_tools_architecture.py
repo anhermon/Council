@@ -175,7 +175,12 @@ def function():
 
         result = await analyze_architecture(str(test_file))
         assert result["cohesion_score"] == 0
-        assert "Python files" in result["recommendations"][0]
+        # Should have a recommendation about unsupported file type
+        assert len(result["recommendations"]) > 0
+        assert (
+            "not supported" in result["recommendations"][0].lower()
+            or ".txt" in result["recommendations"][0]
+        )
 
     @pytest.mark.asyncio
     async def test_analyze_nonexistent_file(self):

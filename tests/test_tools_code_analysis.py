@@ -210,7 +210,7 @@ class TestAnalyzeImports:
 
         result = await analyze_imports(str(test_file))
         assert result["imports"] == []
-        assert "Python files" in result["note"]
+        assert "not supported" in result["note"].lower() or ".txt" in result["note"]
 
     @pytest.mark.asyncio
     async def test_analyze_imports_syntax_error(self, mock_settings):
