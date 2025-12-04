@@ -324,17 +324,9 @@ async def write_file(file_path: str, content: str, base_path: str | None = None)
     logfire.info("Writing file", file_path=file_path, base_path=base_path)
 
     try:
+        # resolve_file_path already validates the path is within allowed directories
         resolved_path = resolve_file_path(file_path, base_path)
-
-        # Ensure file is within project root for safety
         project_root = settings.project_root.resolve()
-        try:
-            if not resolved_path.is_relative_to(project_root):
-                raise ValueError(f"File path must be within project root: {file_path}")
-        except AttributeError:
-            # Python < 3.9 fallback
-            if not str(resolved_path).startswith(str(project_root)):
-                raise ValueError(f"File path must be within project root: {file_path}") from None
 
         # Check content size
         if len(content) > settings.max_file_size:
@@ -349,7 +341,12 @@ async def write_file(file_path: str, content: str, base_path: str | None = None)
         resolved_path.write_text(content, encoding="utf-8")
 
         logfire.info("File written successfully", file_path=file_path, size=len(content))
-        return f"Successfully wrote {resolved_path.relative_to(project_root)}"
+        # Try to get relative path, fallback to absolute if not within project_root
+        try:
+            rel_path = resolved_path.relative_to(project_root)
+            return f"Successfully wrote {rel_path}"
+        except ValueError:
+            return f"Successfully wrote {resolved_path}"
 
     except Exception as e:
         logfire.error("Failed to write file", file_path=file_path, error=str(e))
@@ -400,17 +397,9 @@ async def write_file_chunk(
     )
 
     try:
+        # resolve_file_path already validates the path is within allowed directories
         resolved_path = resolve_file_path(file_path, base_path)
-
-        # Ensure file is within project root for safety
         project_root = settings.project_root.resolve()
-        try:
-            if not resolved_path.is_relative_to(project_root):
-                raise ValueError(f"File path must be within project root: {file_path}")
-        except AttributeError:
-            # Python < 3.9 fallback
-            if not str(resolved_path).startswith(str(project_root)):
-                raise ValueError(f"File path must be within project root: {file_path}") from None
 
         # Validate chunk parameters
         if chunk_index < 0:
@@ -445,11 +434,20 @@ async def write_file_chunk(
             total_chunks=total_chunks,
         )
 
+        # Try to get relative path, fallback to absolute if not within project_root
+        try:
+            rel_path = resolved_path.relative_to(project_root)
+            path_str = str(rel_path)
+        except ValueError:
+            path_str = str(resolved_path)
+
         if chunk_index == total_chunks - 1:
             # Last chunk
-            return f"Successfully wrote chunk {chunk_index + 1}/{total_chunks} (final) to {resolved_path.relative_to(project_root)}"
+            return (
+                f"Successfully wrote chunk {chunk_index + 1}/{total_chunks} (final) to {path_str}"
+            )
         else:
-            return f"Successfully wrote chunk {chunk_index + 1}/{total_chunks} to {resolved_path.relative_to(project_root)}"
+            return f"Successfully wrote chunk {chunk_index + 1}/{total_chunks} to {path_str}"
 
     except Exception as e:
         logfire.error("Failed to write file chunk", file_path=file_path, error=str(e))

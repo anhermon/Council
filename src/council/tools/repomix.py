@@ -161,11 +161,14 @@ async def get_packed_context(file_path: str) -> str:
     logfire.info("Extracting context", file_path=file_path)
 
     # Validate and resolve the file path (prevents path traversal and injection)
+    # Use resolve_file_path for more flexible path resolution (supports base_path)
+    from .path_utils import resolve_file_path
+
     try:
-        resolved_path = validate_file_path(file_path)
-    except PathValidationError:
+        resolved_path = resolve_file_path(file_path)
+    except (PathValidationError, ValueError) as e:
         # Re-raise validation errors as-is
-        raise
+        raise PathValidationError(str(e)) from e
 
     if not resolved_path.exists():
         raise FileNotFoundError(f"File or directory not found: {file_path}")

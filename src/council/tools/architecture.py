@@ -126,7 +126,7 @@ async def analyze_architecture(file_path: str, base_path: str | None = None) -> 
                             f"Consider using a configuration object for {node.name} parameters"
                         )
 
-                # Deep nesting
+                # Deep nesting - check nesting depth within function bodies
                 max_depth = 0
 
                 def check_depth(node: ast.AST, depth: int = 0) -> None:
@@ -142,8 +142,16 @@ async def analyze_architecture(file_path: str, base_path: str | None = None) -> 
                     for child in ast.iter_child_nodes(node):
                         if isinstance(child, ast.If | ast.For | ast.While | ast.Try | ast.With):
                             check_depth(child, depth + 1)
+                        else:
+                            check_depth(child, depth)
 
-                check_depth(tree)
+                # Check nesting within function bodies
+                for node in ast.walk(tree):
+                    if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
+                        # Check nesting within this function's body
+                        for stmt in node.body:
+                            check_depth(stmt, 0)
+
                 if max_depth > 4:
                     anti_patterns.append(f"Deep Nesting: Maximum nesting depth is {max_depth}")
                     recommendations.append("Consider refactoring to reduce nesting depth")

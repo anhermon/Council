@@ -67,7 +67,7 @@ class Settings:
     enable_cache: bool = True
 
     # Concurrency
-    max_concurrent_reviews: int = 5
+    max_concurrent_reviews: int = 2
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -105,7 +105,7 @@ class Settings:
             max_file_size=cls._parse_int_env("COUNCIL_MAX_FILE_SIZE", DEFAULT_MAX_FILE_SIZE),
             max_output_size=cls._parse_int_env("COUNCIL_MAX_OUTPUT_SIZE", DEFAULT_MAX_OUTPUT_SIZE),
             enable_cache=cls._parse_bool_env("COUNCIL_ENABLE_CACHE", True),
-            max_concurrent_reviews=cls._parse_int_env("COUNCIL_MAX_CONCURRENT_REVIEWS", 5),
+            max_concurrent_reviews=cls._parse_int_env("COUNCIL_MAX_CONCURRENT_REVIEWS", 2),
         )
 
     @staticmethod

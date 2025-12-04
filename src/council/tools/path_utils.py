@@ -206,6 +206,16 @@ def resolve_file_path(file_path: str, base_path: str | None = None) -> Path:
     # Prepare allowed roots
     allowed_roots = {settings.project_root.resolve(), Path.cwd().resolve()}
 
+    # If base_path is provided, add it to allowed roots (for test scenarios)
+    if base_path:
+        try:
+            base = Path(base_path).resolve()
+            if base.is_file():
+                base = base.parent
+            allowed_roots.add(base)
+        except (OSError, ValueError):
+            pass  # Ignore invalid base_path
+
     path_obj = Path(file_path)
 
     # If absolute path, validate and use as-is

@@ -366,11 +366,11 @@ async def check_test_quality(test_file: str) -> dict[str, Any]:
         # Read test file
         content = resolved_path.read_text(encoding="utf-8", errors="replace")
 
-        # Count test functions
+        # Count test functions - look for functions starting with test_ or classes starting with Test
         test_pattern = re.compile(
-            r"^\s*(def|async def)\s+test_|^\s*def\s+.*test.*\(|^\s*class\s+Test"
+            r"^\s*(def|async def)\s+test_\w+|^\s*class\s+Test\w+", re.MULTILINE
         )
-        test_count = len(test_pattern.findall(content, re.MULTILINE))
+        test_count = len(test_pattern.findall(content))
 
         # Count assertions
         assertion_pattern = re.compile(

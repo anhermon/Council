@@ -43,7 +43,20 @@ IMPORTANT: When calling tools that require file paths (read_file, analyze_import
 - The tools will intelligently resolve paths relative to the project root or search recursively if needed
 
 Report issues comprehensively - aim to identify all significant issues in a single review to minimize iterations. Prioritize higher severity issues but don't skip lower severity ones if they're legitimate concerns.
-{% if knowledge_rulesets is defined and knowledge_rulesets is mapping and knowledge_rulesets %}
+
+{% if domain_rules %}
+## Domain Specific Standards
+The following standards apply to the code you are reviewing:
+
+{% if domain_rules is string %}
+{{ domain_rules|e }}
+{% else %}
+{{ domain_rules|string|e }}
+{% endif %}
+{% endif %}
+
+{# Check if knowledge_rulesets exists, is not empty, and is iterable (list/dict) but not a string #}
+{% if knowledge_rulesets is defined and knowledge_rulesets and knowledge_rulesets is iterable and knowledge_rulesets is not string %}
 
 You must also adhere to these DYNAMIC STANDARDS loaded from the knowledge base:
 
@@ -58,10 +71,12 @@ Apply these standards when reviewing the code.
 
 LANGUAGE-SPECIFIC GUIDELINES:
 You are reviewing {{ language|e }} code. Apply {{ language|e }}-specific best practices and conventions.
-{% if language_specific_files is defined and language_specific_files is iterable and language_specific_files is not string and language_specific_files|length > 0 %}
+{# Check if language_specific_files is a sequence (list/tuple) with items, not a string #}
+{% if language_specific_files is defined and language_specific_files is sequence and language_specific_files|length > 0 %}
 The following language-specific rulesets have been loaded: {{ language_specific_files|map('e')|join(", ") }}
 {% endif %}
 {% endif %}
+{# Validate extra_instructions exists, is a string, and has non-whitespace content #}
 {% if extra_instructions is defined and extra_instructions is string and extra_instructions|trim|length > 0 %}
 
 Additional instructions: {{ extra_instructions|e }}

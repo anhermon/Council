@@ -515,6 +515,20 @@ def _collect_files(paths: list[Path]) -> list[Path]:
         ".njk",
     }
 
+    # Common lock files to exclude
+    LOCK_FILES = {
+        "uv.lock",
+        "package-lock.json",
+        "poetry.lock",
+        "yarn.lock",
+        "pnpm-lock.yaml",
+        "Gemfile.lock",
+        "composer.lock",
+        "mix.lock",
+        "go.sum",
+        "Cargo.lock",
+    }
+
     files_to_review: list[Path] = []
 
     for path in paths:
@@ -525,13 +539,18 @@ def _collect_files(paths: list[Path]) -> list[Path]:
             continue
 
         if resolved_path.is_file():
+            if resolved_path.name in LOCK_FILES:
+                click.echo(f"⚠️  Skipping lock file: {resolved_path.name}", err=True)
+                continue
             files_to_review.append(resolved_path)
         elif resolved_path.is_dir():
             # Find all code files in directory recursively
             dir_files = [
                 file_path
                 for file_path in resolved_path.rglob("*")
-                if file_path.is_file() and file_path.suffix.lower() in CODE_EXTENSIONS
+                if file_path.is_file()
+                and file_path.suffix.lower() in CODE_EXTENSIONS
+                and file_path.name not in LOCK_FILES
             ]
 
             if not dir_files:

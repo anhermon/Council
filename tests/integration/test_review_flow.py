@@ -98,10 +98,12 @@ async def test_get_packed_context_success(temp_repo: Path) -> None:
 
 @pytest.mark.asyncio
 @pytest.mark.integration
-async def test_get_packed_context_nonexistent_file() -> None:
+async def test_get_packed_context_nonexistent_file(mock_settings) -> None:
     """Test context extraction with non-existent file."""
+    # Use a path within project root to avoid path validation error
+    nonexistent_file = mock_settings.project_root / "nonexistent" / "file.py"
     with pytest.raises(FileNotFoundError):
-        await get_packed_context("/nonexistent/file.py")
+        await get_packed_context(str(nonexistent_file))
 
 
 def test_validate_file_path_success(mock_settings) -> None:

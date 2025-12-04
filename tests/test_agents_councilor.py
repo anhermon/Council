@@ -172,9 +172,17 @@ class TestGetRelevantKnowledge:
         python_file = mock_settings.knowledge_dir / "python.md"
         python_file.write_text("# Python knowledge")
 
-        content, loaded = await get_relevant_knowledge(["test.py"])
-        assert "General knowledge" in content
-        assert "Python knowledge" in content
+        # Patch settings in the councilor module
+        from council.agents import councilor
+
+        original_knowledge_dir = councilor.settings.knowledge_dir
+        councilor.settings.knowledge_dir = mock_settings.knowledge_dir
+        try:
+            content, loaded = await get_relevant_knowledge(["test.py"])
+            assert "General knowledge" in content
+            assert "Python knowledge" in content
+        finally:
+            councilor.settings.knowledge_dir = original_knowledge_dir
 
     @pytest.mark.asyncio
     async def test_get_relevant_knowledge_multiple_files(self, mock_settings):
@@ -187,9 +195,17 @@ class TestGetRelevantKnowledge:
         javascript_file = mock_settings.knowledge_dir / "javascript.md"
         javascript_file.write_text("# JavaScript")
 
-        content, loaded = await get_relevant_knowledge(["test.py", "test.js"])
-        assert "Python" in content
-        assert "JavaScript" in content
+        # Patch settings in the councilor module
+        from council.agents import councilor
+
+        original_knowledge_dir = councilor.settings.knowledge_dir
+        councilor.settings.knowledge_dir = mock_settings.knowledge_dir
+        try:
+            content, loaded = await get_relevant_knowledge(["test.py", "test.js"])
+            assert "Python" in content
+            assert "JavaScript" in content
+        finally:
+            councilor.settings.knowledge_dir = original_knowledge_dir
 
     @pytest.mark.asyncio
     async def test_get_relevant_knowledge_large_file(self, mock_settings):

@@ -1,5 +1,6 @@
 """The Councilor Agent - Core code review logic using Pydantic-AI."""
 
+import asyncio
 import os
 import threading
 from dataclasses import dataclass
@@ -35,6 +36,88 @@ MAX_EXTRA_INSTRUCTIONS_LENGTH = 10000  # Maximum length for extra instructions
 # Determine model from environment variable (required)
 # Users must set COUNCIL_MODEL in their environment or .env file
 MODEL_NAME = os.getenv("COUNCIL_MODEL")
+
+EXTENSION_MAP = {
+    ".py": ["python"],
+    ".js": ["javascript"],
+    ".jsx": ["javascript", "react"],
+    ".ts": ["typescript"],
+    ".tsx": ["typescript", "react"],
+    ".java": ["java"],
+    ".go": ["go"],
+    ".rs": ["rust"],
+    ".cpp": ["cpp"],
+    ".c": ["c"],
+    ".h": ["c"],
+    ".hpp": ["cpp"],
+    ".cs": ["csharp"],
+    ".php": ["php"],
+    ".rb": ["ruby"],
+    ".swift": ["swift"],
+    ".kt": ["kotlin"],
+    ".scala": ["scala"],
+    ".r": ["r"],
+    ".m": ["objectivec"],
+    ".mm": ["objectivec"],
+    ".sh": ["shell"],
+    ".bash": ["shell"],
+    ".zsh": ["shell"],
+    ".fish": ["shell"],
+    ".ps1": ["powershell"],
+    ".bat": ["batch"],
+    ".cmd": ["batch"],
+    ".sql": ["sql"],
+    ".html": ["html"],
+    ".css": ["css"],
+    ".scss": ["scss"],
+    ".sass": ["sass"],
+    ".less": ["less"],
+    ".vue": ["vue"],
+    ".svelte": ["svelte"],
+    ".clj": ["clojure"],
+    ".cljs": ["clojure"],
+    ".lua": ["lua"],
+    ".pl": ["perl"],
+    ".pm": ["perl"],
+    ".dart": ["dart"],
+    ".ex": ["elixir"],
+    ".exs": ["elixir"],
+    ".jl": ["julia"],
+    ".nim": ["nim"],
+    ".cr": ["crystal"],
+    ".d": ["d"],
+    ".pas": ["pascal"],
+    ".f": ["fortran"],
+    ".f90": ["fortran"],
+    ".f95": ["fortran"],
+    ".ml": ["ocaml"],
+    ".mli": ["ocaml"],
+    ".fs": ["fsharp"],
+    ".fsi": ["fsharp"],
+    ".fsx": ["fsharp"],
+    ".vb": ["vbnet"],
+    ".vbs": ["vbscript"],
+    ".yaml": ["yaml"],
+    ".yml": ["yaml"],
+    ".json": ["json"],
+    ".toml": ["toml"],
+    ".ini": ["ini"],
+    ".cfg": ["config"],
+    ".conf": ["config"],
+    ".xml": ["xml"],
+    ".makefile": ["makefile"],
+    ".mk": ["makefile"],
+    ".dockerfile": ["dockerfile"],
+    ".cmake": ["cmake"],
+    ".proto": ["protobuf"],
+    ".thrift": ["thrift"],
+    ".graphql": ["graphql"],
+    ".gql": ["graphql"],
+    ".tf": ["terraform"],
+    ".tfvars": ["terraform"],
+    ".hcl": ["hcl"],
+    ".md": ["markdown"],
+}
 
 
 class Issue(BaseModel):
@@ -320,149 +403,196 @@ def detect_language(file_path: str) -> str:
     path = Path(file_path)
     extension = path.suffix.lower()
 
-    language_map = {
-        ".py": "python",
-        ".js": "javascript",
-        ".jsx": "javascript",
-        ".ts": "typescript",
-        ".tsx": "typescript",
-        ".java": "java",
-        ".go": "go",
-        ".rs": "rust",
-        ".cpp": "cpp",
-        ".c": "c",
-        ".h": "c",
-        ".hpp": "cpp",
-        ".cs": "csharp",
-        ".php": "php",
-        ".rb": "ruby",
-        ".swift": "swift",
-        ".kt": "kotlin",
-        ".scala": "scala",
-        ".r": "r",
-        ".m": "objectivec",
-        ".mm": "objectivec",
+    # Use EXTENSION_MAP to avoid code duplication
+    # Map some extensions to their language equivalents for backward compatibility
+    language_mapping = {
+        ".jsx": "javascript",  # EXTENSION_MAP has "react" but detect_language should return "javascript"
+        ".tsx": "typescript",  # EXTENSION_MAP has "react" but detect_language should return "typescript"
         ".sh": "bash",
         ".bash": "bash",
         ".zsh": "zsh",
         ".fish": "fish",
-        ".ps1": "powershell",
-        ".bat": "batch",
-        ".cmd": "batch",
-        ".sql": "sql",
-        ".html": "html",
-        ".css": "css",
-        ".scss": "scss",
-        ".sass": "sass",
-        ".less": "less",
-        ".vue": "vue",
-        ".svelte": "svelte",
-        ".clj": "clojure",
-        ".cljs": "clojure",
-        ".lua": "lua",
-        ".pl": "perl",
-        ".pm": "perl",
-        ".dart": "dart",
-        ".ex": "elixir",
-        ".exs": "elixir",
-        ".jl": "julia",
-        ".nim": "nim",
-        ".cr": "crystal",
-        ".d": "d",
-        ".pas": "pascal",
-        ".f": "fortran",
-        ".f90": "fortran",
-        ".f95": "fortran",
-        ".ml": "ocaml",
-        ".mli": "ocaml",
-        ".fs": "fsharp",
-        ".fsi": "fsharp",
-        ".fsx": "fsharp",
-        ".vb": "vbnet",
-        ".vbs": "vbscript",
-        ".yaml": "yaml",
-        ".yml": "yaml",
-        ".json": "json",
-        ".toml": "toml",
-        ".ini": "ini",
-        ".cfg": "config",
-        ".conf": "config",
-        ".xml": "xml",
-        ".makefile": "makefile",
-        ".mk": "makefile",
-        ".dockerfile": "dockerfile",
-        ".cmake": "cmake",
-        ".proto": "protobuf",
-        ".thrift": "thrift",
-        ".graphql": "graphql",
-        ".gql": "graphql",
-        ".tf": "terraform",
-        ".tfvars": "terraform",
-        ".hcl": "hcl",
-        ".groovy": "groovy",
-        ".gradle": "gradle",
-        ".jinja": "jinja",
-        ".jinja2": "jinja",
-        ".j2": "jinja",
-        ".mustache": "mustache",
-        ".handlebars": "handlebars",
-        ".hbs": "handlebars",
-        ".ejs": "ejs",
-        ".pug": "pug",
-        ".jade": "jade",
-        ".njk": "nunjucks",
     }
 
-    return language_map.get(extension, "unknown")
+    # First check language_mapping for special cases
+    if extension in language_mapping:
+        return language_mapping[extension]
+
+    # Then check EXTENSION_MAP
+    if extension in EXTENSION_MAP:
+        languages = EXTENSION_MAP[extension]
+        # Return the first language (primary language for this extension)
+        return languages[0] if isinstance(languages, list) else languages
+
+    return "unknown"
+
+
+async def get_relevant_knowledge(file_paths: list[str]) -> tuple[str, set[str]]:
+    """
+
+
+    Retrieve relevant knowledge based on file extensions asynchronously.
+
+
+
+
+
+    Args:
+
+
+        file_paths: List of file paths to identify relevant topics.
+
+
+
+
+
+    Returns:
+
+
+        Tuple of (concatenated content string, set of loaded filenames).
+
+
+    """
+
+    knowledge_dir = settings.knowledge_dir
+
+    if not knowledge_dir.exists():
+        return "", set()
+
+    topics = set()
+
+    for file_path in file_paths:
+        path = Path(file_path)
+
+        ext = path.suffix.lower()
+
+        if ext in EXTENSION_MAP:
+            # Handle both list and string (for backward compatibility if map changes)
+
+            mapped = EXTENSION_MAP[ext]
+
+            if isinstance(mapped, list):
+                topics.update(mapped)
+
+            else:
+                topics.add(mapped)
+
+    relevant_files: list[Path] = []
+
+    loaded_filenames: set[str] = set()
+
+    # Always load general.md if it exists
+
+    general_file = knowledge_dir / "general.md"
+
+    if general_file.exists():
+        relevant_files.append(general_file)
+
+    for topic in topics:
+        topic_file = knowledge_dir / f"{topic}.md"
+
+        if topic_file.exists():
+            relevant_files.append(topic_file)
+        else:
+            # Log warning as requested
+            logfire.debug(f"Knowledge topic file not found: {topic}.md")
+
+    knowledge_content = []
+
+    for file_path in relevant_files:
+        # Skip if already processed (e.g. general.md added twice? unlikely due to logic but safe)
+
+        if file_path.name in loaded_filenames:
+            continue
+
+        try:
+            # Check size limit per file (reusing constant)
+
+            if file_path.stat().st_size > MAX_KNOWLEDGE_FILE_SIZE:
+                logfire.warning(f"Skipping large knowledge file: {file_path}")
+
+                continue
+
+            # Async read - capture file_path in closure
+            file_path_capture = file_path
+            content = await asyncio.to_thread(
+                lambda fp=file_path_capture: fp.read_text(encoding="utf-8")
+            )
+
+            knowledge_content.append(content)
+
+            loaded_filenames.add(file_path.name)
+
+        except Exception as e:
+            logfire.warning(f"Failed to read knowledge file {file_path}: {e}")
+
+    return "\n\n".join(knowledge_content), loaded_filenames
 
 
 # System prompt function (will be registered when agent is created)
+
+
 async def add_dynamic_knowledge(ctx: RunContext[CouncilDeps]) -> str:
     """
+
+
     Dynamically load knowledge base files and inject into system prompt.
 
-    This function scans the knowledge/ directory for .md files and includes
-    their content in the system prompt using Jinja2 templating, allowing the
-    agent to learn from documentation fetched via the scribe tool.
-    It also loads language-specific rulesets based on the file being reviewed.
+
+
+
+
+    This function loads specialized rules based on the file types detected in the review target,
+
+
+    using the EXTENSION_MAP and checking the knowledge/ directory.
+
+
+    It also loads generic knowledge files (legacy behavior) but prioritizes specific topics.
+
+
     """
+
     knowledge_dir = settings.knowledge_dir
+
     knowledge_rulesets: list[tuple[str, str]] = []
 
-    # Detect language from file path
-    language = detect_language(ctx.deps.file_path)
-    language_specific_files: list[str] = []
+    # New Dynamic Knowledge Injection
 
-    # Look for language-specific knowledge files
-    if language != "unknown" and knowledge_dir.exists():
-        # Check for files like: python_best_practices.md, javascript_patterns.md, etc.
-        language_patterns = [
-            f"{language}_best_practices.md",
-            f"{language}_patterns.md",
-            f"{language}_guidelines.md",
-            f"{language}_standards.md",
-            f"{language}_rules.md",
-        ]
-        for pattern in language_patterns:
-            lang_file = knowledge_dir / pattern
-            if lang_file.exists():
-                language_specific_files.append(pattern)
+    # Get relevant knowledge based on topics
 
-    # Scan all markdown files in knowledge directory with resource limits
+    domain_rules, loaded_filenames = await get_relevant_knowledge([ctx.deps.file_path])
+
+    # Legacy: Scan all markdown files in knowledge directory (with limits)
+
+    # We keep this for now to ensure we don't lose access to general docs like 'pydantic_ai.md'
+
+    # unless the user explicitly removes this behavior.
+
     if knowledge_dir.exists():
         file_count = 0
+
         for md_file in sorted(knowledge_dir.glob("*.md")):
             # Enforce maximum file count limit
+
             if file_count >= MAX_KNOWLEDGE_FILES:
                 logfire.warning(
                     f"Maximum knowledge file limit ({MAX_KNOWLEDGE_FILES}) reached, "
                     "skipping remaining files"
                 )
+
                 break
+
+            # Avoid duplicating files that were already loaded via get_relevant_knowledge
+
+            if md_file.name in loaded_filenames:
+                continue
 
             try:
                 # Check file size before reading
+
                 file_size = md_file.stat().st_size
+
                 if file_size > MAX_KNOWLEDGE_FILE_SIZE:
                     logfire.warning(
                         "Knowledge file too large, skipping",
@@ -470,62 +600,110 @@ async def add_dynamic_knowledge(ctx: RunContext[CouncilDeps]) -> str:
                         size=file_size,
                         max_size=MAX_KNOWLEDGE_FILE_SIZE,
                     )
+
                     continue
 
-                content = md_file.read_text(encoding="utf-8")
+                # Async read
+
+                content = await asyncio.to_thread(md_file.read_text, encoding="utf-8")
+
                 knowledge_rulesets.append((md_file.stem, content))
+
                 file_count += 1
+
             except (OSError, PermissionError) as e:
                 # Log but don't fail if a file can't be read due to OS/permission issues
+
                 logfire.warning(
                     "Failed to load knowledge file (OS/permission error)",
                     file=str(md_file),
                     error=str(e),
                 )
+
             except UnicodeDecodeError as e:
                 # Log but don't fail if a file can't be decoded
+
                 logfire.warning(
                     "Failed to decode knowledge file",
                     file=str(md_file),
                     error=str(e),
                 )
 
-        # Load and render the Jinja2 template
-        try:
-            jinja_env = _get_jinja_env()
-            template = jinja_env.get_template("system_prompt.j2")
+    # Load and render the Jinja2 template
 
-            # Validate extra instructions
-            validated_extra_instructions = _validate_extra_instructions(ctx.deps.extra_instructions)
+    try:
+        jinja_env = _get_jinja_env()
 
-            # Add phase-specific instructions if phases are specified
-            phase_instructions = ""
-            if ctx.deps.review_phases:
-                phase_instructions = (
-                    f"\n\nREVIEW PHASES: Focus on {', '.join(ctx.deps.review_phases)}. "
-                )
-                if "security" in ctx.deps.review_phases:
-                    phase_instructions += (
-                        "Prioritize security vulnerabilities and security best practices. "
-                    )
-                if "performance" in ctx.deps.review_phases:
-                    phase_instructions += "Focus on performance bottlenecks, optimization opportunities, and efficiency. "
-                if "maintainability" in ctx.deps.review_phases:
-                    phase_instructions += "Emphasize code maintainability, readability, and long-term sustainability. "
-                if "best_practices" in ctx.deps.review_phases:
-                    phase_instructions += "Apply general best practices and coding standards. "
+        template = jinja_env.get_template("system_prompt.j2")
 
-            prompt = template.render(
-                knowledge_rulesets=knowledge_rulesets,
-                extra_instructions=validated_extra_instructions,
-                language=language,
-                language_specific_files=language_specific_files,
+        # Validate extra instructions
+
+        validated_extra_instructions = _validate_extra_instructions(ctx.deps.extra_instructions)
+
+        # Detect language for existing language-specific guidelines
+
+        language = detect_language(ctx.deps.file_path)
+
+        language_specific_files: list[str] = []
+
+        if language != "unknown" and knowledge_dir.exists():
+            language_patterns = [
+                f"{language}_best_practices.md",
+                f"{language}_patterns.md",
+                f"{language}_guidelines.md",
+                f"{language}_standards.md",
+                f"{language}_rules.md",
+            ]
+
+            for pattern in language_patterns:
+                lang_file = knowledge_dir / pattern
+
+                if lang_file.exists():
+                    language_specific_files.append(pattern)
+
+        # Add phase-specific instructions if phases are specified
+
+        phase_instructions = ""
+
+        if ctx.deps.review_phases:
+            phase_instructions = (
+                f"\n\nREVIEW PHASES: Focus on {', '.join(ctx.deps.review_phases)}. "
             )
 
-            return prompt + phase_instructions
-        except TemplateError as e:
-            logfire.error("Template rendering failed", error=str(e))
-            raise
-        except Exception as e:
-            logfire.error("Failed to generate system prompt", error=str(e))
-            raise
+            if "security" in ctx.deps.review_phases:
+                phase_instructions += (
+                    "Prioritize security vulnerabilities and security best practices. "
+                )
+
+            if "performance" in ctx.deps.review_phases:
+                phase_instructions += (
+                    "Focus on performance bottlenecks, optimization opportunities, and efficiency. "
+                )
+
+            if "maintainability" in ctx.deps.review_phases:
+                phase_instructions += (
+                    "Emphasize code maintainability, readability, and long-term sustainability. "
+                )
+
+            if "best_practices" in ctx.deps.review_phases:
+                phase_instructions += "Apply general best practices and coding standards. "
+
+        prompt = template.render(
+            domain_rules=domain_rules,  # Injected domain rules
+            knowledge_rulesets=knowledge_rulesets,
+            extra_instructions=validated_extra_instructions,
+            language=language,
+            language_specific_files=language_specific_files,
+        )
+
+        return prompt + phase_instructions
+
+    except TemplateError as e:
+        logfire.error("Template rendering failed", error=str(e))
+
+        raise
+
+    except Exception as e:
+        logfire.error("Failed to generate system prompt", error=str(e))
+
+        raise

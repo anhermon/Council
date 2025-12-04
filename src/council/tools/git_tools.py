@@ -152,8 +152,11 @@ async def get_uncommitted_files() -> list[str]:
             )
             if stdout.strip():
                 uncommitted_files.update(stdout.strip().split("\n"))
-        except RuntimeError:
-            # No unstaged changes or error - continue
+        except RuntimeError as e:
+            # Re-raise if it's a real error (not just "no changes")
+            if "no changes" not in str(e).lower() and "exit code 0" not in str(e).lower():
+                raise
+            # No unstaged changes - continue
             pass
 
         # Get staged files
@@ -165,8 +168,11 @@ async def get_uncommitted_files() -> list[str]:
             )
             if stdout.strip():
                 uncommitted_files.update(stdout.strip().split("\n"))
-        except RuntimeError:
-            # No staged changes or error - continue
+        except RuntimeError as e:
+            # Re-raise if it's a real error (not just "no changes")
+            if "no changes" not in str(e).lower() and "exit code 0" not in str(e).lower():
+                raise
+            # No staged changes - continue
             pass
 
         # Also get untracked files
@@ -266,9 +272,10 @@ async def get_file_history(
         if not stdout.strip():
             return []
 
-        # Parse commit history
+        # Parse commit history (respect limit)
         history: list[dict[str, Any]] = []
-        for line in stdout.strip().split("\n"):
+        lines = stdout.strip().split("\n")
+        for line in lines[:limit]:  # Respect the limit
             if not line.strip():
                 continue
 
