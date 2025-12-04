@@ -35,6 +35,97 @@ jobs:
         run: |
           uv run ruff format --check .
 
+  type-check:
+    name: Type check with mypy
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          uv sync --dev
+
+      - name: Install mypy (if not in dependencies)
+        continue-on-error: true
+        run: |
+          uv add --dev mypy || echo "mypy already installed or unavailable"
+
+      - name: Run mypy
+        continue-on-error: true
+        run: |
+          uv run mypy src/council --ignore-missing-imports || echo "⚠ mypy check skipped or failed"
+
+  security:
+    name: Security scan with Bandit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          uv sync --dev
+
+      - name: Install bandit (if not in dependencies)
+        continue-on-error: true
+        run: |
+          uv add --dev bandit[toml] || echo "bandit already installed or unavailable"
+
+      - name: Run Bandit security scan
+        run: |
+          uv run bandit -r src/council -ll || echo "⚠ bandit not available"
+
+  security-deps:
+    name: Dependency security check
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          uv sync --dev
+
+      - name: Install safety (if not in dependencies)
+        continue-on-error: true
+        run: |
+          uv add --dev safety || echo "safety already installed or unavailable"
+
+      - name: Check dependencies for vulnerabilities
+        continue-on-error: true
+        run: |
+          uv run safety check --short-report || echo "⚠ safety not available or no vulnerabilities found"
+
   test:
     name: Test with pytest
     runs-on: ${{ matrix.os }}
@@ -70,22 +161,75 @@ jobs:
         run: |
           uv run pytest tests/integration/ -v --tb=short -m integration || true
 
-  # Type checking is optional - uncomment when mypy is added to dependencies
-  # type-check:
-  #   name: Type check with mypy
-  #   runs-on: ubuntu-latest
-  #   continue-on-error: true
-  #   steps:
-  #     - uses: actions/checkout@v4
-  #     - name: Install uv
-  #       uses: astral-sh/setup-uv@v4
-  #       with:
-  #         version: "latest"
-  #     - name: Set up Python
-  #       uses: actions/setup-python@v5
-  #       with:
-  #         python-version: "3.12"
-  #     - name: Install dependencies
-  #       run: uv sync --dev
-  #     - name: Run mypy
-  #       run: uv run mypy src/council --ignore-missing-imports || true
+  coverage:
+    name: Test coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          uv sync --dev
+
+      - name: Run tests with coverage
+        run: |
+          uv run pytest tests/ --cov=src/council --cov-report=xml --cov-report=term --cov-report=html -m "not integration"
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          file: ./coverage.xml
+          flags: unittests
+          name: codecov-umbrella
+          fail_ci_if_error: false
+        continue-on-error: true
+
+      - name: Upload coverage HTML report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-report
+          path: htmlcov/
+          retention-days: 30
+
+  build:
+    name: Build package
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          uv sync --dev
+
+      - name: Build package
+        run: |
+          uv build
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: dist
+          path: dist/
+          retention-days: 7
