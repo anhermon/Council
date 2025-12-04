@@ -183,14 +183,17 @@ async def get_packed_context(file_path: str) -> str:
     current_time = time.time()
 
     # Check if we have a valid cached result (thread-safe)
+    # Optimize lock usage: read cache entry, release lock, then check TTL
     with _cache_lock:
         cached_result = _repomix_cache.get(cache_key)
-        if cached_result:
-            cached_content, cache_timestamp = cached_result
-            # Verify cache is still valid (within TTL)
-            if (current_time - cache_timestamp) < REPOMIX_CACHE_TTL:
-                logfire.info("Using cached Repomix context", file_path=file_path)
-                return cached_content
+
+    # Check TTL outside lock to minimize lock contention
+    if cached_result:
+        cached_content, cache_timestamp = cached_result
+        # Verify cache is still valid (within TTL)
+        if (current_time - cache_timestamp) < REPOMIX_CACHE_TTL:
+            logfire.info("Using cached Repomix context", file_path=file_path)
+            return cached_content
 
     # Repomix works with directories, so if a file is provided, use its parent
     # and include only that file

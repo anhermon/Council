@@ -8,6 +8,7 @@ from typing import Any
 import logfire
 
 from ..config import get_settings
+from .path_utils import resolve_file_path
 
 settings = get_settings()
 
@@ -100,8 +101,16 @@ async def get_cached_review(file_path: str, model_name: str | None = None) -> di
 
     Returns:
         Cached review result or None if not found/invalid
+
+    Raises:
+        ValueError: If file_path is invalid or outside allowed directories
     """
     try:
+        # Validate file path to prevent path traversal attacks
+        resolved_path = resolve_file_path(file_path)
+        if not resolved_path.exists():
+            return None
+
         cache_key = get_cache_key(file_path, model_name)
         cache_path = get_cache_path(cache_key)
 
@@ -143,12 +152,20 @@ async def cache_review(
         file_path: Path to file
         result: Review result to cache
         model_name: Optional model name/version
+
+    Raises:
+        ValueError: If file_path is invalid or outside allowed directories
     """
     try:
+        # Validate file path to prevent path traversal attacks
+        resolved_path = resolve_file_path(file_path)
+        if not resolved_path.exists():
+            logfire.warning("Cannot cache review for non-existent file", file_path=file_path)
+            return
+
         cache_key = get_cache_key(file_path, model_name)
         cache_path = get_cache_path(cache_key)
 
-        resolved_path = Path(file_path).resolve()
         file_hash = calculate_file_hash(resolved_path)
 
         cache_data = {
@@ -179,12 +196,18 @@ async def clear_cache(file_path: str | None = None) -> int:
 
     Returns:
         Number of cache entries cleared
+
+    Raises:
+        ValueError: If file_path is invalid or outside allowed directories
     """
     try:
         cache_dir = get_cache_dir()
         cleared = 0
 
         if file_path:
+            # Validate file path to prevent path traversal attacks
+            resolve_file_path(file_path)  # Validates path, raises if invalid
+
             # Clear specific file cache
             cache_key = get_cache_key(file_path)
             cache_path = get_cache_path(cache_key)
