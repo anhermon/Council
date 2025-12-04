@@ -1,7 +1,9 @@
 """The Councilor Agent - Core code review logic using Pydantic-AI."""
 
+import ast
 import asyncio
 import os
+import re
 import threading
 from dataclasses import dataclass
 from pathlib import Path
@@ -38,10 +40,6 @@ MAX_EXTRA_INSTRUCTIONS_LENGTH = 10000  # Maximum length for extra instructions
 # Thread-safe storage for debug writers (keyed by file_path)
 _debug_writers: dict[str, "DebugWriter"] = {}
 _debug_writers_lock = threading.Lock()
-
-# Determine model from environment variable (required)
-# Users must set COUNCIL_MODEL in their environment or .env file
-MODEL_NAME = os.getenv("COUNCIL_MODEL")
 
 EXTENSION_MAP = {
     ".py": ["python"],
@@ -241,22 +239,33 @@ class CouncilDeps:
         if not self.file_path or not self.file_path.strip():
             raise ValueError("file_path cannot be empty")
 
-        # Check for path traversal attempts
-        if ".." in self.file_path or self.file_path.startswith("/"):
-            # Allow absolute paths but validate they're safe
-            path_obj = Path(self.file_path)
-            if path_obj.is_absolute():
-                # Check if path is within project root
-                try:
-                    path_obj.resolve().relative_to(settings.project_root.resolve())
-                except ValueError:
-                    # Path is outside project root - this might be intentional for some use cases
-                    # but log a warning
-                    logfire.warning(
-                        "file_path is outside project root",
-                        file_path=self.file_path,
-                        project_root=str(settings.project_root),
-                    )
+        # Check for path traversal attempts and validate absolute paths
+        path_obj = Path(self.file_path)
+        if path_obj.is_absolute():
+            # Check if absolute path is within project root
+            try:
+                resolved = path_obj.resolve()
+                resolved.relative_to(settings.project_root.resolve())
+            except ValueError:
+                # Path is outside project root - this might be intentional for some use cases
+                # but log a warning
+                logfire.warning(
+                    "file_path is outside project root",
+                    file_path=self.file_path,
+                    project_root=str(settings.project_root),
+                )
+        else:
+            # For relative paths, check for path traversal attempts
+            resolved = path_obj.resolve()
+            try:
+                resolved.relative_to(settings.project_root.resolve())
+            except ValueError:
+                logfire.warning(
+                    "file_path resolves outside project root (possible path traversal)",
+                    file_path=self.file_path,
+                    resolved_path=str(resolved),
+                    project_root=str(settings.project_root),
+                )
 
         # Validate extra_instructions length
         if self.extra_instructions and len(self.extra_instructions) > MAX_EXTRA_INSTRUCTIONS_LENGTH:
@@ -274,9 +283,22 @@ class CouncilDeps:
                 )
 
 
+def _get_model_name() -> str | None:
+    """Get model name from environment variable (lazy evaluation)."""
+    return os.getenv("COUNCIL_MODEL")
+
+
 def _create_model() -> OpenAIChatModel | str:
-    """Create the model instance based on configuration."""
-    if not MODEL_NAME:
+    """
+    Create the model instance based on configuration.
+
+    Returns:
+        OpenAIChatModel instance for LiteLLM provider, or a string in the format
+        "provider:model-name" (e.g., "openai:gpt-4o", "anthropic:claude-3-5-sonnet-20241022")
+        for direct provider access.
+    """
+    model_name = _get_model_name()
+    if not model_name:
         raise RuntimeError(
             "COUNCIL_MODEL environment variable is required. Please set it in your .env file or environment.\n"
             "Examples:\n"
@@ -287,7 +309,7 @@ def _create_model() -> OpenAIChatModel | str:
     if settings.litellm_base_url and settings.litellm_api_key:
         # Use LiteLLM provider with custom base URL
         return OpenAIChatModel(
-            MODEL_NAME,
+            model_name,
             provider=LiteLLMProvider(
                 api_base=settings.litellm_base_url,
                 api_key=settings.litellm_api_key,
@@ -295,12 +317,12 @@ def _create_model() -> OpenAIChatModel | str:
         )
     elif settings.openai_api_key:
         # Use direct OpenAI provider if API key is available
-        if ":" not in MODEL_NAME:
+        if ":" not in model_name:
             # No provider prefix, default to OpenAI
-            return f"openai:{MODEL_NAME}"
+            return f"openai:{model_name}"
         else:
             # Already has provider prefix (e.g., "anthropic:claude-3-5-sonnet")
-            return MODEL_NAME
+            return model_name
     else:
         # No API keys configured - raise error with helpful message
         raise RuntimeError(
@@ -451,17 +473,12 @@ def _get_jinja_env() -> Environment:
 
 
 def _validate_extra_instructions(extra_instructions: str | None) -> str | None:
-    """Validate and sanitize extra instructions."""
-    if extra_instructions is None:
-        return None
+    """
+    Validate and sanitize extra instructions.
 
-    if len(extra_instructions) > MAX_EXTRA_INSTRUCTIONS_LENGTH:
-        logfire.warning(
-            f"Extra instructions too long ({len(extra_instructions)} chars), "
-            f"truncating to {MAX_EXTRA_INSTRUCTIONS_LENGTH}"
-        )
-        return extra_instructions[:MAX_EXTRA_INSTRUCTIONS_LENGTH]
-
+    Note: Length validation is already performed in CouncilDeps.__post_init__(),
+    so this function only handles None checks and returns the value as-is.
+    """
     return extra_instructions
 
 
@@ -478,20 +495,20 @@ def detect_language(file_path: str) -> str:
     path = Path(file_path)
     extension = path.suffix.lower()
 
-    # Use EXTENSION_MAP to avoid code duplication
-    # Map some extensions to their language equivalents
-    language_mapping = {
-        ".jsx": "javascript",  # EXTENSION_MAP has "react" but detect_language should return "javascript"
-        ".tsx": "typescript",  # EXTENSION_MAP has "react" but detect_language should return "typescript"
+    # Special handling for extensions that need language normalization
+    # (EXTENSION_MAP may include framework names like "react" but we want the base language)
+    language_overrides = {
+        ".jsx": "javascript",  # EXTENSION_MAP has ["javascript", "react"]
+        ".tsx": "typescript",  # EXTENSION_MAP has ["typescript", "react"]
         ".sh": "bash",
         ".bash": "bash",
         ".zsh": "zsh",
         ".fish": "fish",
     }
 
-    # First check language_mapping for special cases
-    if extension in language_mapping:
-        return language_mapping[extension]
+    # Check overrides first
+    if extension in language_overrides:
+        return language_overrides[extension]
 
     # Then check EXTENSION_MAP
     if extension in EXTENSION_MAP:
@@ -556,28 +573,47 @@ async def get_relevant_knowledge(file_paths: list[str]) -> tuple[str, set[str]]:
             else:
                 topics.add(mapped)
 
-        # For Python files, try to detect library imports
+        # For Python files, try to detect library imports using AST parsing
         if ext == ".py" and path.exists():
             try:
                 content = await asyncio.to_thread(
                     lambda fp=path: fp.read_text(encoding="utf-8", errors="replace")
                 )
-                # Simple import detection - look for common library imports
-                # Check for direct matches with available knowledge files
-                for lib_name in available_knowledge_files:
-                    # Check for import patterns: import lib_name, from lib_name, import lib_name as
-                    import_patterns = [
-                        f"import {lib_name}",
-                        f"from {lib_name}",
-                        f"import {lib_name.replace('_', '')}",  # e.g., pydantic_ai -> pydantic
-                    ]
-                    for pattern in import_patterns:
-                        if pattern in content:
-                            library_topics.add(lib_name)
-                            break
-            except Exception:
-                # If file reading fails, skip library detection
-                pass
+                # Use AST parsing for accurate import detection
+                try:
+                    tree = ast.parse(content, filename=str(path))
+                    for node in ast.walk(tree):
+                        if isinstance(node, ast.Import):
+                            # Handle: import lib_name, import lib_name as alias
+                            for alias in node.names:
+                                module_name = alias.name.split(".")[0]  # Get top-level module
+                                if module_name in available_knowledge_files:
+                                    library_topics.add(module_name)
+                        elif isinstance(node, ast.ImportFrom) and node.module:
+                            # Handle: from lib_name import ...
+                            module_name = node.module.split(".")[0]  # Get top-level module
+                            if module_name in available_knowledge_files:
+                                library_topics.add(module_name)
+                except SyntaxError:
+                    # If AST parsing fails (e.g., syntax errors), fall back to regex matching
+                    # This is a fallback for files with syntax errors or non-Python code
+                    for lib_name in available_knowledge_files:
+                        # Check for import patterns with word boundaries to avoid false positives
+                        patterns = [
+                            rf"\bimport\s+{re.escape(lib_name)}\b",
+                            rf"\bfrom\s+{re.escape(lib_name)}\s+import\b",
+                        ]
+                        for pattern in patterns:
+                            if re.search(pattern, content):
+                                library_topics.add(lib_name)
+                                break
+            except Exception as e:
+                # Log the error for debugging but continue processing
+                logfire.debug(
+                    f"Failed to detect library imports in {file_path}",
+                    error=str(e),
+                    error_type=type(e).__name__,
+                )
 
     relevant_files: list[Path] = []
 

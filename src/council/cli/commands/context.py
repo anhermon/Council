@@ -14,14 +14,10 @@ from ...tools.repomix import get_packed_context, get_packed_diff
 from ..core.context_builder import build_review_context
 from ..utils.paths import resolve_path
 
-# Suppress logfire console output for clean JSON output
-# Configure before any logfire calls
-logfire.configure(send_to_logfire=False, console=False)
-# Also suppress logfire logger output
-logging.getLogger("logfire").setLevel(logging.ERROR)
-
 # Configuration constants
 MAX_EXTRA_INSTRUCTIONS_LENGTH = 10000
+OUTPUT_FORMAT_JSON = "json"
+OUTPUT_FORMAT_MARKDOWN = "markdown"
 
 
 @click.command()
@@ -29,8 +25,8 @@ MAX_EXTRA_INSTRUCTIONS_LENGTH = 10000
 @click.option(
     "--output",
     "-o",
-    type=click.Choice(["json", "markdown"], case_sensitive=False),
-    default="json",
+    type=click.Choice([OUTPUT_FORMAT_JSON, OUTPUT_FORMAT_MARKDOWN], case_sensitive=False),
+    default=OUTPUT_FORMAT_JSON,
     help="Output format for the context (json or markdown)",
 )
 @click.option(
@@ -121,7 +117,7 @@ def context(
         logging.getLogger("logfire.otel").setLevel(logging.CRITICAL)
 
         try:
-            if output != "json":  # Only show status messages for markdown output
+            if output != OUTPUT_FORMAT_JSON:  # Only show status messages for markdown output
                 click.echo("📦 Extracting context...", err=True)
 
             # Get packed context using Repomix
@@ -141,13 +137,19 @@ def context(
             context_data = await build_review_context(packed_xml, deps)
 
             # Output based on format
-            if output == "markdown":
+            if output == OUTPUT_FORMAT_MARKDOWN:
                 _output_markdown(context_data)
             else:
                 _output_json(context_data)
 
+        except ValueError as e:
+            click.echo(f"❌ Invalid input: {e}", err=True)
+            sys.exit(1)
+        except FileNotFoundError as e:
+            click.echo(f"❌ File not found: {e}", err=True)
+            sys.exit(1)
         except Exception as e:
-            click.echo(f"❌ Failed to get context: {e}", err=True)
+            click.echo(f"❌ Unexpected error: {e}", err=True)
             sys.exit(1)
 
     asyncio.run(_get_context())

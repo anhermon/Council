@@ -3,6 +3,7 @@
 import asyncio
 import logging
 import shutil
+import threading
 from pathlib import Path
 
 import logfire
@@ -14,15 +15,20 @@ settings = get_settings()
 
 logger = logging.getLogger(__name__)
 
-# Cache for uv availability check
+# Cache for uv availability check (thread-safe)
 _uv_available: bool | None = None
+_uv_check_lock = threading.Lock()
 
 
 def _is_uv_available() -> bool:
-    """Check if uv is available in PATH."""
+    """Check if uv is available in PATH (thread-safe)."""
     global _uv_available
+    # Double-check locking pattern for thread safety
     if _uv_available is None:
-        _uv_available = shutil.which("uv") is not None
+        with _uv_check_lock:
+            # Check again after acquiring lock (another thread may have set it)
+            if _uv_available is None:
+                _uv_available = shutil.which("uv") is not None
     return _uv_available
 
 

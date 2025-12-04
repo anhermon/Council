@@ -1,6 +1,5 @@
 """Security scanning tools for vulnerability detection."""
 
-import asyncio
 import json
 from pathlib import Path
 from typing import Any
@@ -8,7 +7,9 @@ from typing import Any
 import logfire
 
 from ..config import get_settings
+from .exceptions import SubprocessError, SubprocessTimeoutError
 from .path_utils import resolve_file_path
+from .utils import resolve_tool_command, run_command_safely
 
 settings = get_settings()
 
@@ -25,6 +26,8 @@ async def _run_security_tool(
     """
     Run a security scanning tool command.
 
+    Uses run_command_safely for proper timeout handling and process cleanup.
+
     Args:
         cmd: Command as list of strings
         cwd: Working directory
@@ -32,35 +35,39 @@ async def _run_security_tool(
 
     Returns:
         Tuple of (stdout, stderr, return_code)
+
+    Raises:
+        SubprocessTimeoutError: If command times out
+        SubprocessError: If command execution fails
     """
     if cwd is None:
         cwd = settings.project_root.resolve()
 
     try:
-        proc = await asyncio.create_subprocess_exec(
-            *cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            cwd=str(cwd),
+        stdout, stderr, return_code = await run_command_safely(
+            cmd,
+            cwd=cwd,
+            timeout=timeout,
+            max_output_size=MAX_OUTPUT_SIZE,
+            check=False,  # Don't raise on non-zero return codes
         )
-
-        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
-
-        stdout_text = stdout.decode("utf-8", errors="replace")
-        stderr_text = stderr.decode("utf-8", errors="replace")
-
-        # Check output size
-        if len(stdout_text) > MAX_OUTPUT_SIZE:
-            logfire.warning("Security tool output too large, truncating", size=len(stdout_text))
-            stdout_text = stdout_text[:MAX_OUTPUT_SIZE]
-
-        return stdout_text, stderr_text, proc.returncode
-
-    except TimeoutError as e:
-        raise TimeoutError(f"Security scan command timed out after {timeout} seconds") from e
-    except Exception as e:
-        logfire.error("Security scan command failed", cmd=cmd, error=str(e))
+        return stdout, stderr, return_code
+    except SubprocessTimeoutError as e:
+        raise SubprocessTimeoutError(
+            f"Security scan command timed out after {timeout} seconds: {' '.join(cmd)}",
+            command=cmd,
+            original_error=e.original_error if hasattr(e, "original_error") else e,
+        ) from e
+    except SubprocessError:
+        # Re-raise subprocess errors as-is
         raise
+    except Exception as e:
+        logfire.error("Security scan command failed unexpectedly", cmd=cmd, error=str(e))
+        raise SubprocessError(
+            f"Security scan command failed: {' '.join(cmd)} - {str(e)}",
+            command=cmd,
+            original_error=e,
+        ) from e
 
 
 async def scan_security_vulnerabilities(
@@ -112,22 +119,28 @@ async def scan_security_vulnerabilities(
         # Run Bandit (Python security scanner)
         if is_python:
             try:
+                # Resolve tool command (use uv run if available)
+                bandit_cmd = resolve_tool_command("bandit")
+
                 # Check if bandit is available
-                check_proc = await asyncio.create_subprocess_exec(
-                    "bandit",
-                    "--version",
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE,
-                )
-                await check_proc.wait()
-                if check_proc.returncode == 0:
+                try:
+                    await run_command_safely(
+                        bandit_cmd + ["--version"],
+                        cwd=project_root,
+                        timeout=settings.tool_check_timeout,
+                        check=False,
+                    )
+                except (SubprocessError, SubprocessTimeoutError):
+                    # Bandit not available
+                    pass
+                else:
                     results["available_tools"].append("bandit")
                     try:
                         # Run bandit with JSON output
                         target = str(resolved_path)
                         stdout, stderr, return_code = await _run_security_tool(
-                            [
-                                "bandit",
+                            bandit_cmd
+                            + [
                                 "-r",
                                 target,
                                 "-f",
@@ -152,30 +165,37 @@ async def scan_security_vulnerabilities(
                                 "stderr": stderr,
                                 "return_code": return_code,
                             }
-                    except Exception as e:
+                    except (SubprocessError, SubprocessTimeoutError) as e:
                         logfire.warning("Bandit scan failed", error=str(e))
                         results["bandit"] = {"error": str(e)}
-            except Exception:
-                # Bandit not available
+            except Exception as e:
+                # Unexpected error checking bandit availability
+                logfire.debug("Bandit availability check failed", error=str(e))
                 pass
 
         # Run Semgrep (multi-language security scanner)
         try:
+            # Resolve tool command (use uv run if available)
+            semgrep_cmd = resolve_tool_command("semgrep")
+
             # Check if semgrep is available
-            check_proc = await asyncio.create_subprocess_exec(
-                "semgrep",
-                "--version",
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
-            await check_proc.wait()
-            if check_proc.returncode == 0:
+            try:
+                await run_command_safely(
+                    semgrep_cmd + ["--version"],
+                    cwd=project_root,
+                    timeout=settings.tool_check_timeout,
+                    check=False,
+                )
+            except (SubprocessError, SubprocessTimeoutError):
+                # Semgrep not available
+                pass
+            else:
                 results["available_tools"].append("semgrep")
                 try:
                     target = str(resolved_path)
                     stdout, stderr, return_code = await _run_security_tool(
-                        [
-                            "semgrep",
+                        semgrep_cmd
+                        + [
                             "--json",
                             "--quiet",
                             "--config=auto",  # Use auto config for security rules
@@ -199,11 +219,12 @@ async def scan_security_vulnerabilities(
                             "stderr": stderr,
                             "return_code": return_code,
                         }
-                except Exception as e:
+                except (SubprocessError, SubprocessTimeoutError) as e:
                     logfire.warning("Semgrep scan failed", error=str(e))
                     results["semgrep"] = {"error": str(e)}
-        except Exception:
-            # Semgrep not available
+        except Exception as e:
+            # Unexpected error checking semgrep availability
+            logfire.debug("Semgrep availability check failed", error=str(e))
             pass
 
         logfire.info(
