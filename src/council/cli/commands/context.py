@@ -61,6 +61,9 @@ def context(
     and generates a review checklist. The output can be used by external agents
     (like Gemini, Claude, Codex, etc.) to perform code reviews.
 
+    Note: This command does NOT require an API key as it does not use Council's LLM.
+    It only performs file operations, template rendering, and knowledge base loading.
+
     Examples:
         council context src/council/main.py
         council context src/council/main.py --output markdown

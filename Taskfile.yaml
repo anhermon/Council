@@ -190,6 +190,27 @@ tasks:
       URL: ''
       TOPIC: ''
 
+  learn:prompt:
+    desc: "Output a system prompt for scanning the project and learning knowledge (usage: task learn:prompt OUTPUT_FILE=.council/learn_prompt.md)"
+    cmds:
+      - "{{.PYTHON}} scripts/generate_learn_prompt.py {{.OUTPUT_FILE}}"
+    vars:
+      OUTPUT_FILE: '{{default ".council/context/learn_prompt.md" .OUTPUT_FILE}}'
+
+  learn:prompt-agent:
+    desc: "Generate learn prompt and run Cursor Agent with it (usage: task learn:prompt-agent)"
+    cmds:
+      - mkdir -p {{.CONTEXT_DIR}}
+      - |
+        PROMPT_FILE="{{.CONTEXT_DIR}}/learn_prompt.md"
+        ABS_PROMPT_FILE="$(pwd)/$PROMPT_FILE"
+        echo "📦 Generating learn prompt..."
+        task learn:prompt OUTPUT_FILE="$PROMPT_FILE"
+        echo "✅ Learn prompt generated: $PROMPT_FILE"
+        echo "🤖 Running Cursor Agent with learn prompt..."
+        echo "Note: Make sure you're authenticated with 'cursor-agent login' if needed"
+        cursor-agent -p "Please read the system prompt at $ABS_PROMPT_FILE and follow its instructions to scan this project for relevant knowledge and use 'council learn' commands to add it to the knowledge base."
+
   # ============================================================================
   # Council Context Commands - Generate context and run Cursor Agent
   # ============================================================================
