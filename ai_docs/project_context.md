@@ -35,10 +35,16 @@ The Council is an AI-powered code review agent. It uses Repomix to extract compr
   - Learn Rules: `uv run council learn <url> <topic>`
   - Get Context: `uv run council context <file_path>` - Output review context for external agents
   - Housekeeping: `uv run council housekeeping`
-- **Run Tests:** (Not yet implemented - placeholder in README)
+- **Run Tests:**
+  - Unit tests: `uv run pytest tests/ -v --tb=short -m "not integration"`
+  - All tests: `uv run pytest tests/ -v`
+  - With coverage: `uv run pytest tests/ --cov=src/council --cov-report=html --cov-report=term`
 - **Build/Deploy:**
   - Install: `uv sync`
   - Package: Standard Python packaging via `pyproject.toml` (hatchling backend)
+- **CI/CD:**
+  - Local verification: `task ci:verify` - Runs all CI checks locally before pushing
+  - Monitor CI status: Use GitHub API or GitHub CLI to check workflow runs
 
 ## 5. File Structure Map
 
@@ -85,3 +91,16 @@ council/
 - **Configuration Separation:** No user-specific configuration values should be hardcoded in the repository. All model names, API endpoints, and other user-specific settings must come from environment variables.
 - **Uncommitted Reviews:** Use `--uncommitted` flag to review only files with uncommitted changes. This is useful for pre-commit reviews.
 - **Context Command:** Use `council context <file_path>` to get review context (code, prompt, knowledge) for external agents to perform reviews without Council's LLM.
+- **CI Monitoring:**
+  - **Local Verification:** Run `task ci:verify` to execute all CI checks locally (lint, type-check, security, tests, coverage, build)
+  - **GitHub Actions Status:** Monitor CI via GitHub API:
+    ```bash
+    # Get latest workflow run status
+    curl -s -H "Accept: application/vnd.github+json" \
+      "https://api.github.com/repos/anhermon/Council/actions/runs?per_page=1" | \
+      python3 -c "import sys, json; data=json.load(sys.stdin); \
+      run=data['workflow_runs'][0] if data.get('workflow_runs') else None; \
+      print(f\"Status: {run['status'] if run else 'N/A'}, Conclusion: {run.get('conclusion', 'N/A') if run else 'N/A'}\") if run else print('No runs found')"
+    ```
+  - **CI Jobs:** The workflow includes lint, type-check, security (Bandit), dependency security (pip-audit), tests (multiple OS/Python versions), coverage, and build verification
+  - **Security Checks:** Bandit fails on medium/high severity issues; pip-audit scans dependencies for vulnerabilities
