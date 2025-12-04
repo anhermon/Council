@@ -57,7 +57,7 @@ def _analyze_architecture_treesitter(
         if language_name == "javascript":
             query_imports = "(import_statement) @import"
         elif language_name in ["typescript", "tsx"]:
-            query_imports = "(import_statement) @import (import_require) @import"
+            query_imports = "(import_statement) @import"  # import_require removed
         elif language_name == "java":
             query_imports = "(import_declaration) @import"
         elif language_name == "go":
@@ -73,7 +73,6 @@ def _analyze_architecture_treesitter(
         # Count methods/functions for God Object detection
         query_methods = ""
         if language_name in ["javascript", "typescript", "tsx"]:
-            # Match method definitions in classes
             query_methods = """
             (class_declaration
               body: (class_body
@@ -82,39 +81,18 @@ def _analyze_architecture_treesitter(
             )
             """
         elif language_name == "java":
-            # Match method declarations in classes
-            query_methods = """
-            (class_declaration
-              body: (class_body
-                (method_declaration) @method
-              )
-            )
-            """
+            query_methods = "(class_declaration body: (class_body (method_declaration) @method))"
         # Go doesn't have classes in the same way, skip for now
 
-        method_count = 0
         if query_methods:
-            try:
-                query = Query(language, query_methods)
-                cursor = QueryCursor(query)
-                captures = cursor.captures(tree.root_node)
-                # captures is dict: {'method': [Node, Node, ...]}
-                method_nodes = captures.get("method", [])
-                method_count = len(method_nodes)
-            except Exception as e:
-                logfire.warning(f"Method counting query failed for {language_name}", error=str(e))
+            query = Query(language, query_methods)
+            cursor = QueryCursor(query)
+            captures = cursor.captures(tree.root_node)
+            method_count = sum(len(nodes) for nodes in captures.values())
 
-        # Always use regex for JS/TS as Tree Sitter queries may not be reliable
-        if language_name in ["javascript", "typescript", "tsx"]:
-            # Count method definitions: methodName() { or methodName(): returnType {
-            method_matches = re.findall(r"\w+\s*\([^)]*\)\s*(?::\s*[^{]+)?\s*\{", content)
-            regex_count = len(method_matches)
-            # Use the higher count (query or regex) to be safe
-            method_count = max(method_count, regex_count)
-
-        if method_count > 20:
-            anti_patterns.append(f"God Object: File contains {method_count} methods in classes")
-            recommendations.append("Consider splitting classes into smaller components")
+            if method_count > 20:
+                anti_patterns.append(f"God Object: File contains {method_count} methods in classes")
+                recommendations.append("Consider splitting classes into smaller components")
 
     except Exception as e:
         logfire.warning(f"Tree Sitter architecture query failed for {language_name}", error=str(e))

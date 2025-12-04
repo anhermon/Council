@@ -82,19 +82,22 @@ Run the server directly:
 uv run python -m src.council.main
 ```
 
-Or use the CLI:
-```bash
-uv run council server
-```
-
 ### CLI Commands
 
 The Council provides a comprehensive CLI interface for code reviews and maintenance:
 
 #### Review Code
 ```bash
-uv run council review <file_path> [--output json|markdown|pretty] [--extra-instructions "instructions"]
+uv run council review [PATHS]... [OPTIONS]
 ```
+
+**Options:**
+- `-o, --output [json|markdown|pretty]`: Output format for the review results (default: pretty)
+- `-i, --extra-instructions TEXT`: Additional instructions for the review
+- `-d, --diff TEXT`: Review only changed code compared to git reference (e.g., HEAD, main). If provided, only modified files will be reviewed.
+- `--no-cache`: Disable caching of review results
+- `--phases TEXT`: Comma-separated list of review phases to run (security,performance,maintainability,best_practices). If not specified, runs all phases in a single pass.
+- `-u, --uncommitted`: Review only uncommitted changes. If specified without paths, reviews all uncommitted files.
 
 **Examples:**
 ```bash
@@ -115,6 +118,12 @@ uv run council review --uncommitted
 
 # Review changes compared to a git reference
 uv run council review --diff main src/
+
+# Review specific phases only
+uv run council review src/council/main.py --phases security,performance
+
+# Disable caching for fresh review
+uv run council review src/council/main.py --no-cache
 ```
 
 #### Learn Rules
@@ -128,10 +137,17 @@ uv run council learn "https://docs.anthropic.com/en/docs/build-with-claude/promp
 ```
 
 #### Get Context
-Output review context for external agents (useful for using other AI models). Can focus on specific review phases (security, performance, maintainability, best_practices):
+Output review context for external agents (useful for using other AI models). This command extracts code context, loads relevant knowledge base content, and generates a review checklist. The output can be used by external agents (like Gemini, Claude, Codex, etc.) to perform code reviews.
+
 ```bash
-uv run council context <file_path> [--output json|markdown] [--diff <ref>] [--extra-instructions "instructions"] [--phases "phase1,phase2"]
+uv run council context FILE_PATH [OPTIONS]
 ```
+
+**Options:**
+- `-o, --output [json|markdown]`: Output format for the context (default: json)
+- `-d, --diff TEXT`: Extract context for diff-based review (e.g., HEAD, main). If provided, only changed code will be included.
+- `-i, --extra-instructions TEXT`: Additional instructions for the review
+- `--phases TEXT`: Comma-separated list of review phases to focus on (security,performance,maintainability,best_practices)
 
 **Examples:**
 ```bash
@@ -151,13 +167,8 @@ uv run council context src/council/main.py --extra-instructions "Focus on securi
 uv run council context src/council/main.py --phases security,performance
 ```
 
-#### Run MCP Server
-```bash
-uv run council server
-```
-
 #### Housekeeping
-Execute comprehensive codebase maintenance and cleanup:
+Execute comprehensive codebase maintenance and cleanup following a structured 4-phase protocol:
 ```bash
 uv run council housekeeping
 ```

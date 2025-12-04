@@ -8,7 +8,6 @@ The Council is an AI-powered code review agent. It uses Repomix to extract compr
 
 - Language: Python >=3.12
 - Frameworks:
-  - FastMCP (MCP server framework)
   - Pydantic-AI (type-safe AI agent framework)
   - Click (CLI framework)
 - Key DB/Services: None (file-based knowledge storage)
@@ -21,24 +20,22 @@ The Council is an AI-powered code review agent. It uses Repomix to extract compr
 
 ## 3. Architecture & Key Patterns
 
-- **Architecture:** Dual-mode agent review system (CLI + MCP Server)
-  - **CLI Layer**: Click commands (review, learn, context, housekeeping) - `cli/main.py`
-  - **MCP Server Layer**: FastMCP server exposing tools as MCP endpoints - `main.py`
-  - **Logic Layer**: Pydantic-AI agent (`councilor.py`) performs reviews
-  - **Context Layer**: Repomix wrapper extracts code context as XML
-  - **Knowledge Layer**: Jina Reader fetches docs, stored in `knowledge/` directory
+- **Architecture:** CLI-based agent review system
+  - CLI Layer: Click commands (review, learn, context, housekeeping)
+  - Logic Layer: Pydantic-AI agent (`councilor.py`) performs reviews
+  - Context Layer: Repomix wrapper extracts code context as XML
+  - Knowledge Layer: Jina Reader fetches docs, stored in `knowledge/` directory
 - **State Management:** Stateless agent with lazy initialization (thread-safe singleton pattern)
 - **Auth Pattern:** API keys via environment variables (OpenAI, LiteLLM proxy, or direct providers)
 
 ## 4. Operational Context
 
 - **Run Locally:**
-  - **MCP Server**: `uv run python -m council.main` (FastMCP server for MCP-compatible editors)
-  - **CLI Review**: `uv run council review <file_path> [options]`
-  - **Learn Rules**: `uv run council learn <url> <topic>`
-  - **Get Context**: `uv run council context <file_path>` - Output review context for external agents
-  - **Housekeeping**: `uv run council housekeeping`
-- **Run Tests:** `uv run pytest` (tests in `tests/` directory)
+  - CLI Review: `uv run council review <file_path> [options]`
+  - Learn Rules: `uv run council learn <url> <topic>`
+  - Get Context: `uv run council context <file_path>` - Output review context for external agents
+  - Housekeeping: `uv run council housekeeping`
+- **Run Tests:** (Not yet implemented - placeholder in README)
 - **Build/Deploy:**
   - Install: `uv sync`
   - Package: Standard Python packaging via `pyproject.toml` (hatchling backend)
@@ -57,9 +54,8 @@ council/
 └── src/
     └── council/
         ├── __init__.py     # Package init, version
-        ├── main.py         # FastMCP server entry point (MCP tools: review_code, learn_rules)
         ├── cli/
-        │   ├── main.py     # Main CLI entry point (Click group)
+        │   ├── main.py     # Main CLI entry point
         │   ├── commands/   # CLI commands (review, learn, context, housekeeping)
         │   ├── core/       # Core review execution and context building
         │   ├── ui/         # UI components (spinner, streaming, output)
@@ -72,16 +68,9 @@ council/
         │   └── councilor.py       # Core Pydantic-AI agent, model creation, knowledge loading
         └── tools/
             ├── __init__.py        # Tool exports
-            ├── repomix.py         # Repomix integration, path validation, XML security checks
+            ├── context.py         # Repomix wrapper, path validation, XML security checks
             ├── git_tools.py       # Git integration (diff, history, uncommitted files)
-            ├── scribe.py          # Jina Reader wrapper, URL validation, SSRF protection
-            ├── architecture.py   # Architecture analysis tools
-            ├── code_analysis.py  # Code analysis utilities
-            ├── security.py       # Security validation tools
-            ├── testing.py        # Testing-related tools
-            ├── metrics.py        # Metrics collection
-            ├── persistence.py    # Review history persistence
-            └── validation.py      # Input validation utilities
+            └── scribe.py          # Jina Reader wrapper, URL validation, SSRF protection
 ```
 
 ## 6. Known Gotchas & Debugging

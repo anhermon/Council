@@ -68,6 +68,7 @@ async def test_analyze_architecture_typescript(tmp_path):
     result = await analyze_architecture(str(ts_file), base_path=str(tmp_path))
 
     anti_patterns = result.get("anti_patterns", [])
+
     assert any("God Object" in ap for ap in anti_patterns)
 
 

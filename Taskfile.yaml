@@ -428,7 +428,7 @@ tasks:
       PROMPT: '{{default "Review this code and provide feedback." .PROMPT}}'
 
   context-phases:
-    desc: "Generate review context for specific phases and open in Cursor (usage: task context-phases FILE_PATH=file.py PHASES=\"security,performance\")"
+    desc: "Generate review context for specific phases (usage: task context-phases FILE_PATH=file.py PHASES=\"security,performance\")"
     cmds:
       - mkdir -p {{.CONTEXT_DIR}}
       - |
@@ -437,10 +437,30 @@ tasks:
         OUTPUT_FILE="{{.CONTEXT_DIR}}/$(basename "$FILE_PATH" | sed 's/\.[^.]*$//')_${PHASES//,/_}_context.md"
         {{.COUNCIL_CMD}} context "$FILE_PATH" --output markdown --phases "$PHASES" > "$OUTPUT_FILE"
         echo "✅ Phase-specific context generated: $OUTPUT_FILE"
-        cursor "$OUTPUT_FILE"
     vars:
       FILE_PATH: '{{default "src/council/main.py" .FILE_PATH}}'
       PHASES: '{{default "security,performance" .PHASES}}'
+
+  context-phases-agent:
+    desc: "Generate phase-specific context and run Cursor Agent (usage: task context-phases-agent FILE_PATH=file.py PHASES=\"security,performance\" PROMPT=\"Review code\")"
+    cmds:
+      - mkdir -p {{.CONTEXT_DIR}}
+      - |
+        FILE_PATH="{{.FILE_PATH}}"
+        PHASES="{{.PHASES}}"
+        PROMPT="{{.PROMPT}}"
+        OUTPUT_FILE="{{.CONTEXT_DIR}}/$(basename "$FILE_PATH" | sed 's/\.[^.]*$//')_${PHASES//,/_}_context.md"
+        ABS_OUTPUT_FILE="$(pwd)/$OUTPUT_FILE"
+        echo "📦 Generating phase-specific context for $FILE_PATH (phases: $PHASES)..."
+        {{.COUNCIL_CMD}} context "$FILE_PATH" --output markdown --phases "$PHASES" > "$OUTPUT_FILE"
+        echo "✅ Phase-specific context generated: $OUTPUT_FILE"
+        echo "🤖 Running Cursor Agent with phase-specific context..."
+        echo "Note: Make sure you're authenticated with 'cursor-agent login' if needed"
+        cursor-agent -p "Please read and review the code context file at $ABS_OUTPUT_FILE focusing on phases: $PHASES. $PROMPT"
+    vars:
+      FILE_PATH: '{{default "src/council/main.py" .FILE_PATH}}'
+      PHASES: '{{default "security,performance" .PHASES}}'
+      PROMPT: '{{default "Review this code and provide feedback." .PROMPT}}'
 
   context-clean:
     desc: Remove all generated context files

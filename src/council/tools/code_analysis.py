@@ -240,50 +240,21 @@ def _analyze_imports_treesitter(
 
     # Define queries based on language
     query_scm = ""
-    if language_name in ["javascript", "typescript", "tsx"]:
-        # Use separate queries for imports and require() calls
-        query_imports = "(import_statement source: (string) @source)"
-        query_require = """
+    if language_name == "javascript":
+        query_scm = """
+        (import_statement source: (string) @source)
+        (export_statement source: (string) @source)
         (call_expression
           function: (identifier) @func
-          arguments: (arguments (string) @source))
+          arguments: (arguments (string) @source)
+          (#eq? @func "require"))
         """
-        try:
-            # Query for import statements
-            query1 = Query(language, query_imports)
-            cursor1 = QueryCursor(query1)
-            captures1 = cursor1.captures(tree.root_node)
-            import_sources = captures1.get("source", [])
-
-            # Query for require() calls - need to filter by function name
-            query2 = Query(language, query_require)
-            cursor2 = QueryCursor(query2)
-            captures2 = cursor2.captures(tree.root_node)
-            require_funcs = captures2.get("func", [])
-            require_sources = captures2.get("source", [])
-
-            # Match require sources with their corresponding func nodes
-            # The captures dict maintains order, so we can pair them by index
-            for i, func_node in enumerate(require_funcs):
-                func_text = content[func_node.start_byte : func_node.end_byte]
-                if func_text == "require" and i < len(require_sources):
-                    import_sources.append(require_sources[i])
-
-            # Process all sources (imports + requires)
-            for source_node in import_sources:
-                text = content[source_node.start_byte : source_node.end_byte]
-                clean_text = text.strip("\"' \n\t")
-                if clean_text:
-                    imports.append(clean_text)
-                    if clean_text.startswith((".", "/")):
-                        local_imports.append(clean_text)
-                    else:
-                        external_imports.append(clean_text)
-            # Skip the rest of the if/elif chain since we handled JS/TS here
-            query_scm = None
-        except Exception as e:
-            logfire.warning(f"Tree Sitter query failed for {language_name}", error=str(e))
-            query_scm = None
+    elif language_name in ["typescript", "tsx"]:
+        # Removed import_require as it may not be present in all grammars
+        query_scm = """
+        (import_statement source: (string) @source)
+        (export_statement source: (string) @source)
+        """
     elif language_name == "java":
         query_scm = """
         (import_declaration (scoped_identifier) @import)
@@ -301,30 +272,25 @@ def _analyze_imports_treesitter(
             captures = cursor.captures(tree.root_node)
 
             # captures is a dict: {'capture_name': [Node, Node, ...]})
-            # Extract source nodes for JS/TS, import nodes for Java, path nodes for Go
-            captures.get("source", [])
-            import_nodes = captures.get("import", [])
-            path_nodes = captures.get("path", [])
-            captures.get("func", [])
+            all_nodes = []
+            for nodes_list in captures.values():
+                all_nodes.extend(nodes_list)
 
-            # JS/TS already handled above, skip here
-            if language_name not in ["javascript", "typescript", "tsx"]:
-                # For Java and Go, process import/path nodes directly
-                all_nodes = import_nodes + path_nodes
-                for node in all_nodes:
-                    text = content[node.start_byte : node.end_byte]
-                    clean_text = text.strip("\"' \n\t")
-                    if clean_text:
-                        imports.append(clean_text)
-                        if language_name == "java":
-                            # Java imports are always external/package level
-                            external_imports.append(clean_text)
-                        elif language_name == "go":
-                            # Go imports - check if relative
-                            if clean_text.startswith((".", "/")):
-                                local_imports.append(clean_text)
-                            else:
-                                external_imports.append(clean_text)
+            for node in all_nodes:
+                text = content[node.start_byte : node.end_byte]
+                # Clean up quotes
+                clean_text = text.strip("'\"")
+                imports.append(clean_text)
+
+                # Simple heuristic for local vs external
+                if language_name in ["javascript", "typescript", "tsx"]:
+                    if clean_text.startswith((".", "/")):
+                        local_imports.append(clean_text)
+                    else:
+                        external_imports.append(clean_text)
+                else:
+                    # For Java/Go, assume everything is external/package level for now
+                    external_imports.append(clean_text)
 
         except Exception as e:
             logfire.warning(f"Tree Sitter query failed for {language_name}", error=str(e))
