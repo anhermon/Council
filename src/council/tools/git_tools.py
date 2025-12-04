@@ -11,9 +11,6 @@ from .utils import run_command_safely
 
 settings = get_settings()
 
-# Maximum number of history entries
-MAX_HISTORY_LIMIT = 100
-
 
 async def _run_git_command(
     cmd: list[str], cwd: Path | None = None, timeout: float | None = None
@@ -234,8 +231,8 @@ async def get_file_history(
     """
     logfire.info("Getting file history", file_path=file_path, limit=limit, base_path=base_path)
 
-    if limit < 1 or limit > MAX_HISTORY_LIMIT:
-        raise ValueError(f"Limit must be between 1 and {MAX_HISTORY_LIMIT}")
+    if limit < 1 or limit > settings.git_max_history_limit:
+        raise ValueError(f"Limit must be between 1 and {settings.git_max_history_limit}")
 
     try:
         resolved_path = resolve_file_path(file_path, base_path)

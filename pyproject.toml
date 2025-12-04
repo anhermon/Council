@@ -19,6 +19,7 @@ dependencies = [
     "tree-sitter-java>=0.23.0",
     "tree-sitter-go>=0.23.0",
     "sqlglot>=26.0.0",
+    "cachetools>=5.3.0",
 ]
 
 [project.scripts]

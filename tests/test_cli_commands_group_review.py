@@ -207,7 +207,11 @@ class TestGroupReviewCommand:
         test_file.write_text("print('hello')")
         output_dir = tmp_path / "output"
 
-        with patch("council.cli.commands.group_review.subprocess.run") as mock_run:
+        with (
+            patch("council.cli.commands.group_review.subprocess.run") as mock_run,
+            patch("council.cli.commands.group_review.settings") as mock_settings,
+        ):
+            mock_settings.project_root = tmp_path
             mock_run.return_value = MagicMock(
                 returncode=0,
                 stdout="# Code Review Context\n\n## Code to Review\n```python\nprint('hello')\n```",
@@ -229,7 +233,11 @@ class TestGroupReviewCommand:
         test_file.write_text("print('hello')")
         output_dir = tmp_path / "output"
 
-        with patch("council.cli.commands.group_review.subprocess.run") as mock_run:
+        with (
+            patch("council.cli.commands.group_review.subprocess.run") as mock_run,
+            patch("council.cli.commands.group_review.settings") as mock_settings,
+        ):
+            mock_settings.project_root = tmp_path
             mock_run.return_value = MagicMock(returncode=1, stderr="Error: File not found")
 
             result = await generate_context(test_file, output_dir)

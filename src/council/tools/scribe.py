@@ -37,10 +37,6 @@ BLOCKED_HOSTNAMES = {
 MAX_TOPIC_LENGTH = 100
 MIN_TOPIC_LENGTH = 1
 
-# Rate limiting constants (requests per minute)
-RATE_LIMIT_REQUESTS = 10  # Maximum requests per time window
-RATE_LIMIT_WINDOW = 60  # Time window in seconds (1 minute)
-
 # Simple rate limiter state
 _rate_limiter_lock = asyncio.Lock()
 _rate_limiter_requests: list[float] = []  # Timestamps of recent requests
@@ -147,6 +143,13 @@ async def _check_rate_limit() -> None:
     Check and enforce rate limiting for external API calls.
 
     Uses a simple token bucket algorithm to limit requests per time window.
+
+    Note: The rate limiter state is stored in memory and resets on application restart.
+    This means that immediately after a restart, the rate limiter won't remember recent
+    requests and may allow bursts that exceed API limits. This is an acceptable trade-off
+    for simplicity - implementing persistent state would require disk I/O and state management
+    complexity. For production deployments with strict rate limit requirements, consider
+    using an external rate limiting service or implementing persistent state storage.
     """
     global _rate_limiter_requests
 
@@ -157,20 +160,20 @@ async def _check_rate_limit() -> None:
         _rate_limiter_requests = [
             req_time
             for req_time in _rate_limiter_requests
-            if current_time - req_time < RATE_LIMIT_WINDOW
+            if current_time - req_time < settings.scribe_rate_limit_window
         ]
 
         # Check if we've exceeded the rate limit
-        if len(_rate_limiter_requests) >= RATE_LIMIT_REQUESTS:
+        if len(_rate_limiter_requests) >= settings.scribe_rate_limit_requests:
             # Calculate wait time until the oldest request expires
             oldest_request = min(_rate_limiter_requests)
-            wait_time = RATE_LIMIT_WINDOW - (current_time - oldest_request) + 1
+            wait_time = settings.scribe_rate_limit_window - (current_time - oldest_request) + 1
 
             logfire.warning(
                 "Rate limit exceeded, waiting before next request",
                 wait_seconds=wait_time,
                 current_requests=len(_rate_limiter_requests),
-                limit=RATE_LIMIT_REQUESTS,
+                limit=settings.scribe_rate_limit_requests,
             )
 
             # Wait until we can make another request
@@ -181,7 +184,7 @@ async def _check_rate_limit() -> None:
             _rate_limiter_requests = [
                 req_time
                 for req_time in _rate_limiter_requests
-                if current_time - req_time < RATE_LIMIT_WINDOW
+                if current_time - req_time < settings.scribe_rate_limit_window
             ]
 
         # Record this request

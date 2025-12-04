@@ -4,6 +4,7 @@ from unittest.mock import patch
 
 import pytest
 
+from council.config import get_settings
 from council.tools.exceptions import (
     PathValidationError,
     RepomixError,
@@ -11,10 +12,12 @@ from council.tools.exceptions import (
     SecurityError,
 )
 from council.tools.repomix import (
-    REPOMIX_CACHE_TTL,
     get_packed_context,
     get_packed_diff,
 )
+
+settings = get_settings()
+REPOMIX_CACHE_TTL = settings.repomix_cache_ttl
 
 
 class TestGetPackedContext:
@@ -77,29 +80,34 @@ class TestGetPackedContext:
 
     @pytest.mark.asyncio
     async def test_get_packed_context_cache_expired(self, mock_settings):
-        """Test cache expiration."""
+        """Test cache expiration with TTLCache."""
         test_file = mock_settings.project_root / "test.py"
         test_file.write_text("# test")
 
         mock_xml = "<xml>content</xml>"
+        # Mock time.time() to control TTL expiration
+        # TTLCache uses time.time() internally for TTL checks
         with patch("council.tools.repomix.run_command_safely") as mock_run:
             mock_run.return_value = ("", "", 0)
             with (
                 patch("pathlib.Path.read_text", return_value=mock_xml),
                 patch("pathlib.Path.exists", return_value=True),
-                patch("council.tools.repomix.time.time") as mock_time,
+                patch("time.time") as mock_time,
             ):
-                # First call
+                # First call - cache the result
                 mock_time.return_value = 1000.0
                 result1 = await get_packed_context(str(test_file))
                 assert result1 == mock_xml
 
-                # Second call after cache expires
-                mock_time.return_value = 1000.0 + REPOMIX_CACHE_TTL + 1
+                # Reset mock
                 mock_run.reset_mock()
+
+                # Second call after cache expires (TTL exceeded)
+                # TTLCache will expire entries when time.time() exceeds TTL
+                mock_time.return_value = 1000.0 + REPOMIX_CACHE_TTL + 1
                 result2 = await get_packed_context(str(test_file))
                 assert result2 == mock_xml
-                # Should call repomix again
+                # Should call repomix again because cache expired
                 assert mock_run.called
 
     @pytest.mark.asyncio
@@ -162,10 +170,12 @@ class TestGetPackedContext:
 
     @pytest.mark.asyncio
     async def test_get_packed_context_cache_cleanup(self, mock_settings):
-        """Test cache cleanup when cache size exceeds limit."""
-        # Create multiple files to trigger cache cleanup
+        """Test cache LRU eviction when cache size exceeds limit."""
+        # Create multiple files to trigger cache eviction
+        # TTLCache automatically evicts oldest entries when maxsize is reached
         files = []
-        for i in range(110):  # More than cache limit of 100
+        cache_max_size = settings.repomix_cache_max_size
+        for i in range(cache_max_size + 10):  # More than cache limit
             test_file = mock_settings.project_root / f"test{i}.py"
             test_file.write_text(f"# test {i}")
             files.append(test_file)
@@ -177,10 +187,11 @@ class TestGetPackedContext:
                 patch("pathlib.Path.read_text", return_value=mock_xml),
                 patch("pathlib.Path.exists", return_value=True),
             ):
-                # Process files to fill cache
-                for test_file in files[:105]:
+                # Process files to fill cache beyond maxsize
+                # TTLCache will automatically evict oldest entries
+                for test_file in files:
                     await get_packed_context(str(test_file))
-                # Cache cleanup should have been triggered
+                # Cache should not exceed maxsize (TTLCache handles this automatically)
 
 
 class TestGetPackedDiff:

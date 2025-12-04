@@ -29,6 +29,9 @@ from ..utils.validation import sanitize_extra_instructions
 
 settings = get_settings()
 
+# Threshold for small file batches - files below this use higher concurrency
+SMALL_BATCH_THRESHOLD = 5
+
 
 @click.command()
 @click.argument("paths", nargs=-1, required=False, type=click.Path(path_type=Path))
@@ -381,7 +384,7 @@ def review(
         # Calculate concurrency limit based on number of files
         # More aggressive scaling: use at least 3, scale up to max_concurrent_reviews
         # For small batches, use higher concurrency
-        if len(files_to_review) <= 5:
+        if len(files_to_review) <= SMALL_BATCH_THRESHOLD:
             concurrency_limit = len(files_to_review)
         else:
             concurrency_limit = min(

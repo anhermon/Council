@@ -24,6 +24,8 @@ def validate_file_path(file_path: str) -> Path:
     """
     Validate and sanitize file path to prevent path traversal and injection attacks.
 
+    Uses shared path validation logic to ensure consistency across the codebase.
+
     Args:
         file_path: Path to validate
 
@@ -44,29 +46,26 @@ def validate_file_path(file_path: str) -> Path:
         )
 
     # Resolve the path
-    resolved_path = Path(file_path).resolve()
+    path_obj = Path(file_path)
+    resolved_path = path_obj.resolve()
+
+    # Use shared path validation logic from path_utils
+    from .path_utils import _is_safe_path
 
     # Ensure path is within allowed directories
     # Allow paths within project root or current working directory
-    allowed_roots = [settings.project_root.resolve(), Path.cwd().resolve()]
+    allowed_roots = {settings.project_root.resolve(), Path.cwd().resolve()}
 
-    # Check if path is within any allowed root
-    path_str = str(resolved_path)
-    is_allowed = False
-    for root in allowed_roots:
-        root_str = str(root)
-        # Use is_relative_to if available (Python 3.9+), otherwise manual check
-        try:
-            if resolved_path.is_relative_to(root):
-                is_allowed = True
-                break
-        except AttributeError:
-            # Python < 3.9: manual check
-            if path_str.startswith(root_str) or path_str == root_str:
-                is_allowed = True
-                break
-
-    if not is_allowed:
+    # Check if path is safe using shared validation logic
+    if not _is_safe_path(resolved_path, allowed_roots):
+        # Log full details at DEBUG level for debugging
+        logfire.debug(
+            "Path validation failed",
+            file_path=file_path,
+            resolved_path=str(resolved_path),
+            project_root=str(settings.project_root),
+            cwd=str(Path.cwd()),
+        )
         # Sanitize error message to prevent information disclosure
         # Only show that path is not allowed, not the full allowed roots
         raise PathValidationError(

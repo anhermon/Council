@@ -3,11 +3,10 @@
 import hashlib
 import re
 import tempfile
-import threading
-import time
 from pathlib import Path
 
 import logfire
+from cachetools import TTLCache
 
 from ..config import get_settings
 from .exceptions import (
@@ -24,14 +23,23 @@ settings = get_settings()
 
 __all__ = ["get_packed_context", "get_packed_diff", "extract_code_from_xml"]
 
-# Cache TTL for Repomix results (1 hour in seconds)
-REPOMIX_CACHE_TTL = 3600.0
+# Maximum number of include patterns to process in a single Repomix command
+# This prevents command line length issues with very large file lists
+MAX_INCLUDE_PATTERNS_TO_PROCESS = 10
 
-# In-memory cache for Repomix results: cache_key -> (content, timestamp)
-_repomix_cache: dict[str, tuple[str, float]] = {}
+# Initialize cache with TTL and maxsize from settings
+# TTLCache is thread-safe and automatically handles TTL expiration and LRU eviction
+_repomix_cache: TTLCache[str, str] | None = None
 
-# Lock for thread-safe cache operations
-_cache_lock = threading.Lock()
+
+def _get_cache() -> TTLCache[str, str]:
+    """Get or initialize the Repomix cache instance."""
+    global _repomix_cache
+    if _repomix_cache is None:
+        _repomix_cache = TTLCache(
+            maxsize=settings.repomix_cache_max_size, ttl=settings.repomix_cache_ttl
+        )
+    return _repomix_cache
 
 
 def _get_file_hash(file_path: Path) -> str:
@@ -194,20 +202,13 @@ async def get_packed_context(file_path: str) -> str:
 
     # Check cache first
     cache_key = _get_file_hash(resolved_path)
-    current_time = time.time()
+    cache = _get_cache()
 
-    # Check if we have a valid cached result (thread-safe)
-    # Optimize lock usage: read cache entry, release lock, then check TTL
-    with _cache_lock:
-        cached_result = _repomix_cache.get(cache_key)
-
-    # Check TTL outside lock to minimize lock contention
-    if cached_result:
-        cached_content, cache_timestamp = cached_result
-        # Verify cache is still valid (within TTL)
-        if (current_time - cache_timestamp) < REPOMIX_CACHE_TTL:
-            logfire.info("Using cached Repomix context", file_path=file_path)
-            return cached_content
+    # TTLCache automatically handles TTL expiration - if key exists, it's valid
+    cached_content = cache.get(cache_key)
+    if cached_content is not None:
+        logfire.info("Using cached Repomix context", file_path=file_path)
+        return cached_content
 
     # Repomix works with directories, so if a file is provided, use its parent
     # and include only that file
@@ -277,17 +278,11 @@ async def get_packed_context(file_path: str) -> str:
             target_dir, output_path, include_pattern, additional_patterns
         )
 
-        # Cache the result (thread-safe)
-        with _cache_lock:
-            _repomix_cache[cache_key] = (content, current_time)
-
-            # Clean up old cache entries (keep cache size reasonable)
-            if len(_repomix_cache) > 100:
-                # Remove entries older than TTL
-                cutoff_time = current_time - REPOMIX_CACHE_TTL
-                expired_keys = [k for k, v in _repomix_cache.items() if v[1] <= cutoff_time]
-                for key in expired_keys:
-                    del _repomix_cache[key]
+        # Cache the result
+        # TTLCache automatically handles TTL expiration and LRU eviction when maxsize is reached
+        # It is thread-safe by design, so no manual locking is needed
+        cache = _get_cache()
+        cache[cache_key] = content
 
         logfire.info("Context extracted successfully", size=len(content))
         return content
@@ -526,7 +521,7 @@ async def get_packed_diff(file_path: str, base_ref: str = "HEAD") -> str:
 
             # Add include patterns (repomix may support multiple --include flags)
             # If not, we might need to run repomix multiple times or use a different approach
-            for pattern in include_patterns[:10]:  # Limit to 10 files to avoid command line issues
+            for pattern in include_patterns[:MAX_INCLUDE_PATTERNS_TO_PROCESS]:
                 # Validate each pattern
                 try:
                     validated_pattern = validate_include_pattern(pattern)

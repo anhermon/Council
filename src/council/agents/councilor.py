@@ -26,11 +26,13 @@ from ..tools.code_analysis import (
     write_file_chunk,
 )
 from ..tools.debug import DebugWriter
+from ..tools.exceptions import PathValidationError
 from ..tools.git_tools import get_file_history, get_git_diff
 from ..tools.metrics import calculate_complexity
 from ..tools.security import scan_security_vulnerabilities
 from ..tools.static_analysis import run_static_analysis
 from ..tools.testing import check_test_coverage, check_test_quality, find_related_tests
+from ..tools.validation import validate_file_path
 
 settings = get_settings()
 
@@ -241,33 +243,12 @@ class CouncilDeps:
         if not self.file_path or not self.file_path.strip():
             raise ValueError("file_path cannot be empty")
 
-        # Check for path traversal attempts and validate absolute paths
-        path_obj = Path(self.file_path)
-        if path_obj.is_absolute():
-            # Check if absolute path is within project root
-            try:
-                resolved = path_obj.resolve()
-                resolved.relative_to(settings.project_root.resolve())
-            except ValueError:
-                # Path is outside project root - this might be intentional for some use cases
-                # but log a warning
-                logfire.warning(
-                    "file_path is outside project root",
-                    file_path=self.file_path,
-                    project_root=str(settings.project_root),
-                )
-        else:
-            # For relative paths, check for path traversal attempts
-            resolved = path_obj.resolve()
-            try:
-                resolved.relative_to(settings.project_root.resolve())
-            except ValueError:
-                logfire.warning(
-                    "file_path resolves outside project root (possible path traversal)",
-                    file_path=self.file_path,
-                    resolved_path=str(resolved),
-                    project_root=str(settings.project_root),
-                )
+        # Use centralized path validation to ensure consistency
+        try:
+            validate_file_path(self.file_path)
+        except PathValidationError as e:
+            # Re-raise as ValueError for consistency with existing behavior
+            raise ValueError(str(e)) from e
 
         # Validate and truncate extra_instructions length
         if self.extra_instructions and len(self.extra_instructions) > MAX_EXTRA_INSTRUCTIONS_LENGTH:

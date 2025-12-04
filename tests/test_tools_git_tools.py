@@ -4,12 +4,15 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from council.config import get_settings
 from council.tools.git_tools import (
-    MAX_HISTORY_LIMIT,
     get_file_history,
     get_git_diff,
     get_uncommitted_files,
 )
+
+settings = get_settings()
+MAX_HISTORY_LIMIT = settings.git_max_history_limit
 
 
 class TestGetGitDiff:

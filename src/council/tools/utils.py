@@ -39,8 +39,14 @@ def resolve_tool_command(tool_name: str) -> list[str]:
     This ensures tools from project dependencies are executed in the correct
     virtual environment context.
 
+    Security Note: The `tool_name` parameter is used directly in subprocess calls.
+    Callers must ensure that `tool_name` is validated and comes from a trusted source
+    (e.g., hardcoded tool names or validated user input). This function does not perform
+    validation to allow flexibility, but callers are responsible for ensuring `tool_name`
+    does not contain shell metacharacters or path traversal sequences.
+
     Args:
-        tool_name: Name of the tool (e.g., "ruff", "coverage")
+        tool_name: Name of the tool (e.g., "ruff", "coverage"). Must be validated by caller.
 
     Returns:
         Command as list of strings, prefixed with "uv run" if uv is available

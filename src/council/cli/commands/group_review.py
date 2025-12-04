@@ -7,7 +7,7 @@ import subprocess
 import sys
 from collections import defaultdict
 from pathlib import Path
-from typing import Any
+from typing import Any, TypedDict
 
 import click
 
@@ -15,6 +15,32 @@ from ...config import get_settings
 from ..utils.paths import collect_files
 
 settings = get_settings()
+
+# Constants
+MAX_ERROR_MESSAGE_LENGTH = 500
+MAX_JSON_PREVIEW_LENGTH = 500
+
+
+def validate_file_path(file_path: Path, project_root: Path) -> tuple[bool, str | None]:
+    """
+    Validate that a file path is within the project root.
+
+    Args:
+        file_path: File path to validate
+        project_root: Project root directory
+
+    Returns:
+        Tuple of (is_valid, error_message). If valid, error_message is None.
+    """
+    try:
+        resolved_file = file_path.resolve()
+        resolved_root = project_root.resolve()
+        resolved_file.relative_to(resolved_root)
+        return True, None
+    except ValueError:
+        return False, "File path is outside project root"
+    except Exception as e:
+        return False, f"Invalid file path: {str(e)}"
 
 
 def load_gitignore_patterns(project_root: Path) -> list[str]:
@@ -50,9 +76,12 @@ def matches_gitignore(file_path: Path, patterns: list[str], project_root: Path) 
     """
     Check if a file matches any gitignore pattern.
 
+    Supports negation patterns (starting with !) which un-ignore files that would
+    otherwise be ignored by earlier patterns.
+
     Args:
         file_path: File path to check
-        patterns: List of gitignore patterns
+        patterns: List of gitignore patterns (may include negation patterns with !)
         project_root: Project root directory
 
     Returns:
@@ -68,28 +97,64 @@ def matches_gitignore(file_path: Path, patterns: list[str], project_root: Path) 
     rel_path_str = str(rel_path)
     rel_path_parts = rel_path.parts
 
-    for pattern in patterns:
-        # Handle negation patterns (starting with !)
-        if pattern.startswith("!"):
-            continue  # Skip negation for now, can be enhanced later
+    # Separate positive and negative patterns
+    positive_patterns: list[str] = []
+    negative_patterns: list[str] = []
 
+    for pattern in patterns:
+        if pattern.startswith("!"):
+            # Negation pattern - remove the ! prefix
+            negative_patterns.append(pattern[1:])
+        else:
+            positive_patterns.append(pattern)
+
+    # First check if file matches any positive pattern (if so, it's ignored)
+    is_ignored = False
+    for pattern in positive_patterns:
         # Handle directory patterns
         if "/" in pattern:
             # Pattern contains path separator, match against full relative path
             if fnmatch.fnmatch(rel_path_str, pattern) or fnmatch.fnmatch(
                 rel_path_str, f"**/{pattern}"
             ):
-                return True
+                is_ignored = True
+                break
         else:
             # Pattern is a filename/glob, check against filename and any part
             if fnmatch.fnmatch(file_path.name, pattern):
-                return True
+                is_ignored = True
+                break
             # Also check if pattern matches any directory in the path
             for part in rel_path_parts:
                 if fnmatch.fnmatch(part, pattern):
-                    return True
+                    is_ignored = True
+                    break
+            if is_ignored:
+                break
 
-    return False
+    # If file is ignored, check if any negation pattern un-ignores it
+    if is_ignored:
+        for pattern in negative_patterns:
+            # Handle directory patterns
+            if "/" in pattern:
+                # Pattern contains path separator, match against full relative path
+                if fnmatch.fnmatch(rel_path_str, pattern) or fnmatch.fnmatch(
+                    rel_path_str, f"**/{pattern}"
+                ):
+                    # Negation pattern matches - un-ignore the file
+                    return False
+            else:
+                # Pattern is a filename/glob, check against filename and any part
+                if fnmatch.fnmatch(file_path.name, pattern):
+                    # Negation pattern matches - un-ignore the file
+                    return False
+                # Also check if pattern matches any directory in the path
+                for part in rel_path_parts:
+                    if fnmatch.fnmatch(part, pattern):
+                        # Negation pattern matches - un-ignore the file
+                        return False
+
+    return is_ignored
 
 
 def group_files_by_structure(files: list[Path], project_root: Path) -> dict[str, list[Path]]:
@@ -140,10 +205,38 @@ def group_files_by_structure(files: list[Path], project_root: Path) -> dict[str,
     return dict(groups)
 
 
-async def generate_context(file_path: Path, output_dir: Path) -> dict[str, Any]:
+# Type definition for generate_context return value
+class ContextResult(TypedDict):
+    """Result of context generation for a file."""
+
+    file: str
+    success: bool
+    output_file: str | None
+    error: str | None
+
+
+async def generate_context(file_path: Path, output_dir: Path) -> ContextResult:
     """Generate context for a single file."""
-    # Create safe filename from full path
-    safe_name = str(file_path).replace("/", "_").replace("\\", "_").replace(".", "_")
+    # Validate file path is within project root
+    is_valid, error_msg = validate_file_path(file_path, settings.project_root)
+    if not is_valid:
+        return {
+            "file": str(file_path),
+            "success": False,
+            "output_file": None,
+            "error": error_msg or "File path validation failed",
+        }
+
+    # Create safe filename using relative path
+    try:
+        rel_path = file_path.relative_to(settings.project_root)
+        safe_name = str(rel_path).replace("/", "_").replace("\\", "_").replace(".", "_")
+    except ValueError:
+        # Fallback: use hash if relative path fails (shouldn't happen after validation)
+        import hashlib
+
+        safe_name = hashlib.md5(str(file_path).encode(), usedforsecurity=False).hexdigest()  # noqa: S324
+
     output_file = output_dir / f"{safe_name}_context.md"
 
     try:
@@ -158,20 +251,29 @@ async def generate_context(file_path: Path, output_dir: Path) -> dict[str, Any]:
 
         if result.returncode == 0:
             # Save context to file
-            output_file.parent.mkdir(parents=True, exist_ok=True)
-            output_file.write_text(result.stdout, encoding="utf-8")
-            return {
-                "file": str(file_path),
-                "success": True,
-                "output_file": str(output_file),
-                "error": None,
-            }
+            try:
+                output_file.parent.mkdir(parents=True, exist_ok=True)
+                output_file.write_text(result.stdout, encoding="utf-8")
+                return {
+                    "file": str(file_path),
+                    "success": True,
+                    "output_file": str(output_file),
+                    "error": None,
+                }
+            except (OSError, PermissionError) as e:
+                return {
+                    "file": str(file_path),
+                    "success": False,
+                    "output_file": None,
+                    "error": f"Failed to write context file: {str(e)}",
+                }
         else:
+            error_msg = result.stderr or "Unknown error"
             return {
                 "file": str(file_path),
                 "success": False,
                 "output_file": None,
-                "error": result.stderr or "Unknown error",
+                "error": error_msg[:MAX_ERROR_MESSAGE_LENGTH],
             }
     except subprocess.TimeoutExpired:
         return {
@@ -191,6 +293,16 @@ async def generate_context(file_path: Path, output_dir: Path) -> dict[str, Any]:
 
 async def run_review(file_path: Path) -> dict[str, Any]:
     """Run review for a single file."""
+    # Validate file path is within project root
+    is_valid, error_msg = validate_file_path(file_path, settings.project_root)
+    if not is_valid:
+        return {
+            "file": str(file_path),
+            "success": False,
+            "review": None,
+            "error": error_msg or "File path validation failed",
+        }
+
     try:
         result = subprocess.run(
             ["uv", "run", "council", "review", str(file_path), "--output", "json"],
@@ -238,7 +350,7 @@ async def run_review(file_path: Path) -> dict[str, Any]:
                         "file": str(file_path),
                         "success": False,
                         "review": None,
-                        "error": f"Failed to parse review JSON: {str(e)}. Output preview: {json_text[:500]}",
+                        "error": f"Failed to parse review JSON: {str(e)}. Output preview: {json_text[:MAX_JSON_PREVIEW_LENGTH]}",
                     }
 
             return {
@@ -253,7 +365,7 @@ async def run_review(file_path: Path) -> dict[str, Any]:
                 "file": str(file_path),
                 "success": False,
                 "review": None,
-                "error": error_msg[:500],  # Limit error message length
+                "error": error_msg[:MAX_ERROR_MESSAGE_LENGTH],
             }
     except subprocess.TimeoutExpired:
         return {

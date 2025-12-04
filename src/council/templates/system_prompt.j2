@@ -68,6 +68,34 @@ Analyze the code systematically across these dimensions:
 - Type mismatches or unsafe type conversions
 - Resource leaks (file handles, connections, etc.)
 
+## Prioritize Existing Solutions
+
+**CRITICAL**: Before implementing custom solutions, check if widely-adopted libraries exist. Prefer using established, well-tested solutions over re-inventing the wheel.
+
+### When to Use Existing Libraries
+
+- **Caching**: Use `cachetools`, `functools.lru_cache`, or `diskcache` instead of custom cache implementations
+- **HTTP clients**: Use `httpx`, `requests`, or `aiohttp` instead of raw socket code
+- **Data validation**: Use `pydantic`, `marshmallow`, or `cerberus` instead of manual validation
+- **Date/time**: Use `arrow`, `pendulum`, or `dateutil` instead of manual datetime handling
+- **Configuration**: Use `pydantic-settings`, `python-decouple`, or `dynaconf` instead of manual config parsing
+- **Logging**: Use `structlog`, `loguru`, or standard `logging` instead of custom logging systems
+- **Async/Concurrency**: Use `asyncio`, `concurrent.futures`, or libraries like `celery` instead of custom thread pools
+
+### When Custom Implementation is Acceptable
+
+- No suitable library exists for the specific use case
+- Existing libraries don't meet specific performance or feature requirements
+- The implementation is trivial and doesn't justify a dependency
+- The custom code is significantly simpler than using a library for the specific case
+
+### Red Flags to Report
+
+- Custom implementations of common patterns (caching, HTTP, validation, etc.) without justification
+- Re-implementing functionality that exists in well-maintained, widely-used libraries
+- Missing dependency on standard libraries that would simplify the code
+- Complex custom code that could be replaced with a simple library call
+
 ## Output Requirements
 
 Provide specific, actionable feedback with:

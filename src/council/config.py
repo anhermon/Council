@@ -70,6 +70,17 @@ class Settings:
     # Concurrency
     max_concurrent_reviews: int = 2
 
+    # Cache settings
+    repomix_cache_ttl: float = 3600.0  # Cache TTL in seconds (1 hour)
+    repomix_cache_max_size: int = 200  # Maximum cache entries before LRU eviction
+
+    # Git settings
+    git_max_history_limit: int = 100  # Maximum number of git history entries
+
+    # Rate limiting settings (for external API calls)
+    scribe_rate_limit_requests: int = 10  # Maximum requests per time window
+    scribe_rate_limit_window: int = 60  # Time window in seconds (1 minute)
+
     @classmethod
     def from_env(cls) -> "Settings":
         """Load settings from environment variables."""
@@ -107,6 +118,11 @@ class Settings:
             max_output_size=cls._parse_int_env("COUNCIL_MAX_OUTPUT_SIZE", DEFAULT_MAX_OUTPUT_SIZE),
             enable_cache=cls._parse_bool_env("COUNCIL_ENABLE_CACHE", True),
             max_concurrent_reviews=cls._parse_int_env("COUNCIL_MAX_CONCURRENT_REVIEWS", 2),
+            repomix_cache_ttl=cls._parse_float_env("COUNCIL_REPOMIX_CACHE_TTL", 3600.0),
+            repomix_cache_max_size=cls._parse_int_env("COUNCIL_REPOMIX_CACHE_MAX_SIZE", 200),
+            git_max_history_limit=cls._parse_int_env("COUNCIL_GIT_MAX_HISTORY_LIMIT", 100),
+            scribe_rate_limit_requests=cls._parse_int_env("COUNCIL_SCRIBE_RATE_LIMIT_REQUESTS", 10),
+            scribe_rate_limit_window=cls._parse_int_env("COUNCIL_SCRIBE_RATE_LIMIT_WINDOW", 60),
         )
 
     @classmethod
