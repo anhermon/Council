@@ -100,7 +100,33 @@ jobs:
       - name: Run Bandit security scan
         if: steps.check_bandit.outputs.available == 'true'
         run: |
+          # Run Bandit with JSON output to parse severity
+          uv run bandit -r src/council -ll -f json > bandit-report.json || true
+          # Show human-readable output
           uv run bandit -r src/council -ll
+          # Check for medium or high severity issues
+          python3 << 'EOF'
+          import json
+          import sys
+
+          try:
+              with open('bandit-report.json', 'r') as f:
+                  data = json.load(f)
+
+              high_severity = [i for i in data.get('results', []) if i.get('issue_severity') == 'HIGH']
+              medium_severity = [i for i in data.get('results', []) if i.get('issue_severity') == 'MEDIUM']
+
+              if high_severity or medium_severity:
+                  print(f"\n❌ Found {len(high_severity)} HIGH and {len(medium_severity)} MEDIUM severity security issues!")
+                  sys.exit(1)
+              else:
+                  print("\n✅ No medium or high severity security issues found.")
+                  sys.exit(0)
+          except (FileNotFoundError, json.JSONDecodeError, KeyError) as e:
+              print(f"⚠ Warning: Could not parse Bandit output: {e}")
+              # If we can't parse, fail safe - let Bandit's exit code decide
+              sys.exit(1)
+          EOF
 
   security-deps:
     name: Dependency security check
@@ -123,15 +149,22 @@ jobs:
         run: |
           uv sync --dev
 
-      - name: Install safety (if not in dependencies)
+      - name: Install pip-audit (if not in dependencies)
         continue-on-error: true
         run: |
-          uv add --dev safety || echo "safety already installed or unavailable"
+          uv add --dev pip-audit || echo "pip-audit already installed or unavailable"
+
+      - name: Check if pip-audit is available
+        id: check_pip_audit
+        continue-on-error: true
+        run: |
+          uv run pip-audit --version && echo "available=true" >> $GITHUB_OUTPUT || echo "available=false" >> $GITHUB_OUTPUT
 
       - name: Check dependencies for vulnerabilities
+        if: steps.check_pip_audit.outputs.available == 'true'
         continue-on-error: true
         run: |
-          uv run safety check --short-report || echo "⚠ safety not available or no vulnerabilities found"
+          uv run pip-audit --desc || echo "⚠ pip-audit scan completed with issues or errors"
 
   test:
     name: Test with pytest

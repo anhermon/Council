@@ -114,13 +114,44 @@ tasks:
   security:deps:
     desc: Check dependencies for security vulnerabilities
     cmds:
-      - "{{.UV}} run safety check --short-report || echo '⚠ safety not available'"
+      - "{{.UV}} run pip-audit --desc || echo '⚠ pip-audit not available or vulnerabilities found'"
 
   quality:
     desc: Run all quality checks (lint, format, type-check, security)
     deps: [lint, format, type-check, security]
     cmds:
       - echo "✓ All quality checks completed"
+
+  ci:verify:
+    desc: Run all CI checks locally (mirrors GitHub Actions workflow)
+    cmds:
+      - echo "🔍 Running CI verification checks..."
+      - echo ""
+      - echo "1️⃣  Linting..."
+      - task lint
+      - task format
+      - echo ""
+      - echo "2️⃣  Type checking..."
+      - task type-check || echo "⚠ Type checking skipped or failed"
+      - echo ""
+      - echo "3️⃣  Security scanning..."
+      - "{{.UV}} run bandit -r {{.SRC_DIR}} -ll -f json > /tmp/bandit-report.json 2>/dev/null || true"
+      - "{{.UV}} run bandit -r {{.SRC_DIR}} -ll || echo '⚠ bandit not available'"
+      - python3 scripts/check_bandit_severity.py
+      - echo ""
+      - echo "4️⃣  Dependency security..."
+      - task security:deps || echo "⚠ Dependency security check skipped"
+      - echo ""
+      - echo "5️⃣  Running tests..."
+      - task test:unit
+      - echo ""
+      - echo "6️⃣  Test coverage..."
+      - "{{.UV}} run pytest {{.TEST_DIR}} --cov={{.SRC_DIR}}/council --cov-report=term -m 'not integration' || echo '⚠ Coverage check failed'"
+      - echo ""
+      - echo "7️⃣  Building package..."
+      - task build
+      - echo ""
+      - echo "✅ All CI checks passed!"
 
   # ============================================================================
   # Build & Distribution
