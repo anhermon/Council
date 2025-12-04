@@ -135,7 +135,7 @@ tasks:
       - task type-check || echo "⚠ Type checking skipped or failed"
       - echo ""
       - echo "3️⃣  Security scanning..."
-      - "{{.UV}} run bandit -r {{.SRC_DIR}} -ll -f json > /tmp/bandit-report.json 2>/dev/null || true"
+      - "{{.UV}} run bandit -r {{.SRC_DIR}} --severity-level medium -f json > /tmp/bandit-report.json 2>/dev/null || true"
       - "{{.UV}} run bandit -r {{.SRC_DIR}} -ll || echo '⚠ bandit not available'"
       - python3 scripts/check_bandit_severity.py
       - echo ""

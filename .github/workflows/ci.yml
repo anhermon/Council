@@ -100,9 +100,9 @@ jobs:
       - name: Run Bandit security scan
         if: steps.check_bandit.outputs.available == 'true'
         run: |
-          # Run Bandit with JSON output to parse severity
-          uv run bandit -r src/council -ll -f json > bandit-report.json || true
-          # Show human-readable output
+          # Run Bandit with JSON output to parse severity (use --severity-level medium to include MEDIUM+ in JSON)
+          uv run bandit -r src/council --severity-level medium -f json > bandit-report.json || true
+          # Show human-readable output with all issues for visibility
           uv run bandit -r src/council -ll
           # Check for medium or high severity issues
           python3 << 'EOF'
@@ -113,11 +113,19 @@ jobs:
               with open('bandit-report.json', 'r') as f:
                   data = json.load(f)
 
+              # Check results array for HIGH/MEDIUM issues
               high_severity = [i for i in data.get('results', []) if i.get('issue_severity') == 'HIGH']
               medium_severity = [i for i in data.get('results', []) if i.get('issue_severity') == 'MEDIUM']
 
-              if high_severity or medium_severity:
-                  print(f"\n❌ Found {len(high_severity)} HIGH and {len(medium_severity)} MEDIUM severity security issues!")
+              # Also check metrics as fallback (in case JSON results are empty but metrics show issues)
+              metrics = data.get('metrics', {}).get('_totals', {})
+              metrics_high = metrics.get('SEVERITY.HIGH', 0)
+              metrics_medium = metrics.get('SEVERITY.MEDIUM', 0)
+
+              if high_severity or medium_severity or metrics_high > 0 or metrics_medium > 0:
+                  print(f"\n❌ Found security issues:")
+                  print(f"  HIGH: {len(high_severity)} in results, {metrics_high} in metrics")
+                  print(f"  MEDIUM: {len(medium_severity)} in results, {metrics_medium} in metrics")
                   sys.exit(1)
               else:
                   print("\n✅ No medium or high severity security issues found.")

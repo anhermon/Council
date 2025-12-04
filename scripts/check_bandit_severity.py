@@ -20,15 +20,21 @@ def main():
         with open(report_file) as f:
             data = json.load(f)
 
+        # Check results array for HIGH/MEDIUM issues
         high_severity = [i for i in data.get("results", []) if i.get("issue_severity") == "HIGH"]
         medium_severity = [
             i for i in data.get("results", []) if i.get("issue_severity") == "MEDIUM"
         ]
 
-        if high_severity or medium_severity:
-            print(
-                f"\n❌ Found {len(high_severity)} HIGH and {len(medium_severity)} MEDIUM severity security issues!"
-            )
+        # Also check metrics as fallback (in case JSON results are empty but metrics show issues)
+        metrics = data.get("metrics", {}).get("_totals", {})
+        metrics_high = metrics.get("SEVERITY.HIGH", 0)
+        metrics_medium = metrics.get("SEVERITY.MEDIUM", 0)
+
+        if high_severity or medium_severity or metrics_high > 0 or metrics_medium > 0:
+            print("\n❌ Found security issues:")
+            print(f"  HIGH: {len(high_severity)} in results, {metrics_high} in metrics")
+            print(f"  MEDIUM: {len(medium_severity)} in results, {metrics_medium} in metrics")
             return 1
         else:
             print("\n✅ No medium or high severity security issues found.")
